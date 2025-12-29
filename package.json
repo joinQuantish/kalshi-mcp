@@ -1,0 +1,85 @@
+{
+  "name": "@quantish/kalshi-server",
+  "version": "0.1.0",
+  "description": "Self-hosted Kalshi MCP server for trading via DFlow on Solana",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "prisma",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "start": "node dist/index.js",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joinQuantish/kalshi-mcp.git"
+  },
+  "homepage": "https://quantish.live",
+  "bugs": {
+    "url": "https://github.com/joinQuantish/kalshi-mcp/issues"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.30.1",
+    "@prisma/client": "^5.22.0",
+    "@solana/spl-token": "^0.4.9",
+    "@solana/web3.js": "^1.95.4",
+    "axios": "^1.7.7",
+    "bs58": "^6.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.22.1",
+    "express-rate-limit": "^7.4.1",
+    "helmet": "^8.0.0",
+    "tweetnacl": "^1.0.3",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/bs58": "^4.0.4",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.9.0",
+    "@types/uuid": "^10.0.0",
+    "prisma": "^5.22.0",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "kalshi",
+    "prediction-markets",
+    "solana",
+    "dflow",
+    "trading",
+    "mcp",
+    "ai-agent",
+    "quantish",
+    "self-hosting"
+  ],
+  "author": "Quantish Inc. <hello@quantish.live>",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "publishConfig": {
+    "access": "public"
+  }
+}
+

@@ -1,0 +1,211 @@
+// Kalshi SDK Database Schema
+// Completely separate from Polymarket database
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USER & AUTHENTICATION
+// ============================================
+
+model User {
+  id                String   @id @default(uuid())
+  externalId        String   @unique  // Developer's user identifier
+  
+  // Solana Wallet Info
+  solanaPublicKey   String?  @unique  // Base58 public key
+  encryptedPrivateKey String? // AES-256-GCM encrypted private key (for generated wallets)
+  
+  // Imported Wallet (BYO - Bring Your Own)
+  importedWalletPublicKey String?  @unique
+  importedWalletEncrypted String?  // User-encrypted private key blob (we never see raw key)
+  importedWalletSalt      String?  // Salt for key derivation
+  walletImportedAt        DateTime?
+  
+  // API Keys for this user
+  apiKeys           UserApiKey[]
+  
+  // Activity
+  orders            Order[]
+  positions         Position[]
+  activityLogs      ActivityLog[]
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([externalId])
+  @@index([solanaPublicKey])
+  @@index([importedWalletPublicKey])
+}
+
+model UserApiKey {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  keyHash         String   @unique  // SHA-256 hash of API key
+  keyPrefix       String            // First 8 chars for identification (pk_kalshi_...)
+  apiSecret       String?           // For HMAC signing (hashed)
+  
+  name            String?           // Friendly name
+  lastUsedAt      DateTime?
+  expiresAt       DateTime?
+  isActive        Boolean  @default(true)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([keyHash])
+  @@index([userId])
+}
+
+// ============================================
+// ACCESS CONTROL
+// ============================================
+
+model AccessCode {
+  id              String    @id @default(uuid())
+  code            String    @unique  // Format: KALSHI-XXXX-XXXX-XXXX
+  
+  developerName   String?
+  developerEmail  String?
+  notes           String?
+  
+  maxUses         Int       @default(1)
+  currentUses     Int       @default(0)
+  expiresAt       DateTime?
+  isActive        Boolean   @default(true)
+  
+  createdBy       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([code])
+  @@index([isActive])
+}
+
+// ============================================
+// TRADING
+// ============================================
+
+model Order {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // DFlow/Kalshi specific
+  dflowOrderId    String?  @unique  // Order ID from DFlow
+  eventTicker     String             // Kalshi event ticker
+  marketTicker    String             // Market ticker
+  outcomeMint     String             // SPL token mint address
+  
+  // Order details
+  side            OrderSide
+  orderType       OrderType @default(LIMIT)
+  amount          Decimal   @db.Decimal(20, 6)  // Input amount (USDC)
+  price           Decimal?  @db.Decimal(10, 4)  // Price per contract (0.01-0.99)
+  size            Int?                          // Number of contracts
+  
+  // Execution
+  filledAmount    Decimal?  @db.Decimal(20, 6)
+  avgPrice        Decimal?  @db.Decimal(10, 4)
+  slippageBps     Int       @default(100)      // Slippage tolerance in basis points
+  
+  // Transaction
+  txSignature     String?   // Solana transaction signature
+  status          OrderStatus @default(PENDING)
+  errorMessage    String?
+  
+  // Timestamps
+  executedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([eventTicker])
+  @@index([marketTicker])
+}
+
+model Position {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Market info
+  eventTicker     String
+  marketTicker    String
+  outcomeMint     String   // SPL token mint for this outcome
+  outcomeSide     String   // "YES" or "NO"
+  
+  // Position details
+  balance         Decimal  @db.Decimal(20, 6)  // Token balance
+  avgEntryPrice   Decimal? @db.Decimal(10, 4)
+  realizedPnl     Decimal  @default(0) @db.Decimal(20, 6)
+  
+  // Market status
+  isSettled       Boolean  @default(false)
+  settlementValue Decimal? @db.Decimal(20, 6)  // Payout if won
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, outcomeMint])
+  @@index([userId])
+  @@index([eventTicker])
+}
+
+// ============================================
+// LOGGING & AUDIT
+// ============================================
+
+model ActivityLog {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  action          String   // e.g., "order_placed", "wallet_imported", "position_closed"
+  resource        String   // e.g., "order", "wallet", "position"
+  resourceId      String?
+  
+  details         Json?    // Additional context
+  ipAddress       String?
+  userAgent       String?
+  
+  createdAt       DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum OrderSide {
+  BUY
+  SELL
+}
+
+enum OrderType {
+  MARKET
+  LIMIT
+}
+
+enum OrderStatus {
+  PENDING
+  SUBMITTED
+  FILLED
+  PARTIALLY_FILLED
+  CANCELLED
+  FAILED
+  EXPIRED
+}
+
