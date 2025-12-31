@@ -1,139 +1,320 @@
-# @quantish/kalshi-server
+# @quantish/kalshi-sdk
 
-Self-hosted Kalshi MCP server for trading on Kalshi markets via DFlow on Solana.
-
-## Overview
-
-This package provides an MCP (Model Context Protocol) server that enables AI agents to trade on Kalshi prediction markets through the DFlow protocol on Solana.
-
-## Features
-
-- **Full Kalshi Trading** - Buy/sell on any Kalshi market
-- **Solana Wallet Management** - Generate and manage Solana wallets
-- **DFlow Integration** - Trade via DFlow's Solana infrastructure
-- **MCP Compatible** - Works with Claude, Quantish Agent, and any MCP client
-- **Self-Hostable** - Run on Railway, Fly.io, or any Node.js host
-
-## Quick Start
-
-### Option 1: Deploy to Railway (Recommended)
-
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/kalshi-mcp)
-
-### Option 2: Self-Host
-
-```bash
-npm install @quantish/kalshi-server
-```
-
-## Environment Variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DATABASE_URL` | Yes | PostgreSQL connection string |
-| `ENCRYPTION_KEY` | Yes | 64-character hex string for wallet encryption |
-| `JWT_SECRET` | Yes | Secret for API key generation |
-| `DFLOW_API_KEY` | Yes | DFlow API key |
-| `SOLANA_RPC_URL` | No | Solana RPC endpoint (defaults to mainnet) |
-| `PORT` | No | Server port (defaults to 3000) |
-
-### Generate Encryption Key
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
-## Available Tools
-
-### Account Management
-- `kalshi_signup` - Create account with Solana wallet
-- `kalshi_get_wallet_info` - Get wallet address and balances
-- `kalshi_export_private_key` - Export wallet private key
-
-### Market Discovery
-- `kalshi_search_markets` - Search Kalshi markets
-- `kalshi_get_market` - Get market details by ticker
-- `kalshi_get_events` - Browse market categories
-- `kalshi_get_live_data` - Get live market data
-
-### Trading
-- `kalshi_get_quote` - Get quote for trade
-- `kalshi_place_order` - Execute trade on Solana
-- `kalshi_get_positions` - View current positions
-
-### Market Operations
-- `kalshi_check_market_initialization` - Check if market is tokenized
-- `kalshi_initialize_market` - Initialize market on-chain
-- `kalshi_check_redemption_status` - Check if market can be redeemed
-
-## API Format
-
-The server exposes a JSON-RPC 2.0 endpoint at `/mcp`:
-
-```bash
-curl -X POST https://your-server.com/mcp \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY" \
-  -d '{
-    "jsonrpc": "2.0",
-    "method": "tools/call",
-    "params": {
-      "name": "kalshi_get_positions",
-      "arguments": {}
-    },
-    "id": 1
-  }'
-```
-
-## Connecting to Quantish Agent
-
-Configure the CLI to use your server:
-
-```bash
-export KALSHI_MCP_URL=https://your-server.com/mcp
-export KALSHI_API_KEY=your-api-key
-quantish
-```
-
-Or add to `~/.quantish/config.json`:
-
-```json
-{
-  "kalshiMcpUrl": "https://your-server.com/mcp",
-  "kalshiApiKey": "your-api-key"
-}
-```
-
-## Development
-
-```bash
-# Install dependencies
-npm install
-
-# Generate Prisma client
-npm run db:generate
-
-# Run migrations
-npm run db:push
-
-# Start development server
-npm run dev
-```
-
-## Resources
-
-- **NPM**: [@quantish/kalshi-server](https://www.npmjs.com/package/@quantish/kalshi-server)
-- **GitHub**: [joinQuantish/kalshi-mcp](https://github.com/joinQuantish/kalshi-mcp)
-- **Quantish Agent**: [@quantish/agent](https://www.npmjs.com/package/@quantish/agent)
-- **DFlow Docs**: [docs.dflow.net](https://docs.dflow.net)
-
-## License
-
-This project is licensed under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/).
-
-**Free for personal use, research, and non-commercial purposes.** Commercial use requires explicit permission from Quantish Inc. Contact hello@quantish.live for commercial licensing.
+<div align="center">
+  <h3>🎯 Kalshi Prediction Market Trading SDK</h3>
+  <p>Build AI-powered trading agents for Kalshi markets on Solana via DFlow</p>
+  
+  [![npm version](https://badge.fury.io/js/@quantish%2Fkalshi-sdk.svg)](https://www.npmjs.com/package/@quantish/kalshi-sdk)
+  [![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial-orange.svg)](https://polyformproject.org/licenses/noncommercial/1.0.0)
+</div>
 
 ---
 
-Built by [Quantish Inc.](https://quantish.live)
+## 🌟 Features
 
+- **🔐 Secure Wallet Management**
+  - Generate new Solana wallets with encrypted private key storage
+  - **Bring Your Own Wallet (BYOW)** - Import existing wallets (Phantom, Solflare) with client-side encryption
+  - Private keys are NEVER sent unencrypted over the network
+
+- **📊 Kalshi Market Access**
+  - Real-time market discovery via DFlow Prediction Market API
+  - Access to all Kalshi events: Politics, Sports, Crypto, Weather, and more
+  - Live pricing and volume data
+
+- **💹 Trading Operations**
+  - Buy YES/NO outcome tokens
+  - Sell positions back to USDC
+  - Redeem winnings from settled markets
+  - Position and order tracking
+
+- **💱 Token Swaps & Transfers**
+  - Swap SOL ↔ USDC via Jupiter Aggregator
+  - Send SOL and SPL tokens to any wallet
+  - Withdraw funds to external wallets
+
+- **🤖 AI Agent Integration**
+  - Full MCP (Model Context Protocol) support
+  - Works with Claude, Cursor IDE, and other MCP-compatible AI tools
+  - 21 pre-built trading tools
+
+- **🔑 Enterprise Security**
+  - AES-256-GCM encryption for all sensitive data
+  - PBKDF2 key derivation for imported wallets
+  - API key authentication with optional HMAC signing
+  - Access code system for controlled registration
+
+---
+
+## 📦 Installation
+
+### For AI Agent Integration (Cursor/Claude)
+
+No installation needed! Just configure your MCP settings.
+
+### For Developers
+
+```bash
+npm install @quantish/kalshi-sdk
+# or
+yarn add @quantish/kalshi-sdk
+```
+
+---
+
+## 🚀 Quick Start
+
+### 1. Get Your API Key
+
+Contact Quantish for an access code, then:
+
+```bash
+npx quantish-kalshi setup
+```
+
+Or via MCP:
+```json
+{
+  "tool": "kalshi_request_api_key",
+  "args": {
+    "accessCode": "KALSHI-XXXX-XXXX-XXXX",
+    "externalId": "your-unique-id"
+  }
+}
+```
+
+### 2. Configure MCP (Cursor IDE)
+
+Add to `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "quantish_kalshi": {
+      "url": "https://kalshi-mcp-server-production.up.railway.app/mcp",
+      "headers": {
+        "x-api-key": "YOUR_API_KEY"
+      }
+    }
+  }
+}
+```
+
+### 3. Start Trading
+
+```
+"Search for election prediction markets"
+"Buy $10 of YES on the NYC Mayor election"
+"Show my current positions"
+```
+
+### 4. Pagination
+
+Search results are paginated by default (10 results per page). To get more:
+
+```
+"Search for bitcoin markets"                    → First 10 results
+"Get more bitcoin markets, offset 10"           → Next 10 results  
+"Search for bitcoin with limit 25"              → First 25 results
+```
+
+The response includes pagination info:
+```json
+{
+  "events": [...],
+  "pagination": {
+    "offset": 0,
+    "limit": 10,
+    "returned": 10,
+    "hasMore": true,
+    "nextOffset": 10
+  }
+}
+```
+
+---
+
+## 🔐 Secure Wallet Import (BYOW)
+
+Import your existing Phantom/Solflare wallet securely:
+
+### Step 1: Export Your Private Key
+
+In Phantom: Settings → Your Wallets → Export Private Key
+
+### Step 2: Encrypt Locally
+
+```javascript
+const crypto = require('crypto');
+
+const privateKey = 'YOUR_BASE58_PRIVATE_KEY';
+const password = 'YourSecurePassword123!'; // min 12 chars
+
+const salt = crypto.randomBytes(32);
+const iv = crypto.randomBytes(16);
+const derivedKey = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha512');
+
+const cipher = crypto.createCipheriv('aes-256-gcm', derivedKey, iv);
+let encrypted = cipher.update(privateKey, 'utf8', 'hex');
+encrypted += cipher.final('hex');
+const authTag = cipher.getAuthTag().toString('hex');
+
+console.log({
+  encryptedKey: `${encrypted}:${authTag}`,
+  salt: salt.toString('hex'),
+  iv: iv.toString('hex')
+});
+```
+
+### Step 3: Import to SDK
+
+```json
+{
+  "tool": "kalshi_import_wallet",
+  "args": {
+    "encryptedKey": "...",
+    "salt": "...",
+    "iv": "...",
+    "publicKey": "YOUR_PUBLIC_KEY",
+    "password": "YourSecurePassword123!"
+  }
+}
+```
+
+> ⚠️ **Security Note**: Your raw private key NEVER leaves your machine. Only the encrypted bundle is sent to our servers, and we cannot decrypt it without your password.
+
+---
+
+## 🛠️ Available MCP Tools
+
+> **Note:** All tool names are prefixed with `kalshi_` to avoid collisions with other MCPs (like Polymarket).
+
+### Wallet Management
+| Tool | Description |
+|------|-------------|
+| `kalshi_request_api_key` | Get API credentials (requires access code) |
+| `kalshi_setup_wallet` | Generate a new Solana wallet |
+| `kalshi_import_wallet` | Import existing wallet (encrypted) |
+| `kalshi_get_wallet_info` | Get wallet public key and type |
+| `kalshi_get_wallet_import_instructions` | Instructions for secure wallet export |
+| `kalshi_get_balances` | Check SOL and USDC balances |
+| `kalshi_get_token_holdings` | List all SPL token holdings |
+
+### Market Discovery
+| Tool | Description |
+|------|-------------|
+| `kalshi_search_markets` | Search Kalshi events by keyword (paginated, default 10 results) |
+| `kalshi_get_market` | Get details for a specific market |
+| `kalshi_get_events` | List events with filters (paginated) |
+| `kalshi_get_live_data` | Get real-time pricing |
+
+### Trading
+| Tool | Description |
+|------|-------------|
+| `kalshi_get_quote` | Get a swap quote |
+| `kalshi_buy_yes` | Buy YES outcome tokens |
+| `kalshi_buy_no` | Buy NO outcome tokens |
+| `kalshi_sell_position` | Sell outcome tokens |
+| `kalshi_redeem_winnings` | Redeem settled positions |
+| `kalshi_check_redemption_status` | Check if a market is settled and positions can be redeemed |
+| `kalshi_get_redeemable_positions` | List all positions that can be claimed |
+| `kalshi_redeem_all_positions` | Redeem all winning positions at once |
+
+### Token Swaps (via Jupiter)
+| Tool | Description |
+|------|-------------|
+| `kalshi_get_swap_quote` | Get a quote for swapping tokens (SOL ↔ USDC) |
+| `kalshi_execute_swap` | Execute a token swap via Jupiter |
+| `kalshi_swap_sol_to_usdc` | Swap SOL to USDC |
+| `kalshi_swap_usdc_to_sol` | Swap USDC to SOL |
+
+### Send/Withdraw Tokens
+| Tool | Description |
+|------|-------------|
+| `kalshi_send_sol` | Send SOL to another wallet |
+| `kalshi_send_usdc` | Send USDC to another wallet |
+| `kalshi_send_token` | Send any SPL token to another wallet |
+
+### Position Management
+| Tool | Description |
+|------|-------------|
+| `kalshi_get_orders` | List your orders |
+| `kalshi_get_positions` | List your positions |
+
+### API Key Management
+| Tool | Description |
+|------|-------------|
+| `kalshi_list_api_keys` | List your API keys |
+| `kalshi_create_additional_api_key` | Create a new key |
+| `kalshi_revoke_api_key` | Revoke an existing key |
+
+---
+
+## 🏗️ Architecture
+
+<details>
+<summary>Click to expand security architecture</summary>
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     CLIENT (Your Machine)                        │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐    ┌─────────────────────────────────────┐     │
+│  │ Private Key │───▶│ PBKDF2 + AES-256-GCM Encryption    │     │
+│  │ (Phantom)   │    │ (100,000 iterations)                │     │
+│  └─────────────┘    └──────────────┬──────────────────────┘     │
+│                                     │                            │
+│                     ┌───────────────▼───────────────┐            │
+│                     │ Encrypted Bundle (safe to send)│           │
+│                     └───────────────┬───────────────┘            │
+└─────────────────────────────────────┼────────────────────────────┘
+                                      │ HTTPS
+                                      ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     QUANTISH KALSHI SDK                          │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────┐    ┌─────────────────────────────────┐     │
+│  │ Encrypted       │───▶│ Stored in PostgreSQL           │     │
+│  │ Bundle Storage  │    │ (Cannot decrypt without password)│    │
+│  └─────────────────┘    └─────────────────────────────────┘     │
+│                                                                  │
+│  At transaction time:                                            │
+│  ┌─────────────────┐    ┌─────────────────────────────────┐     │
+│  │ User Password   │───▶│ Decrypt in Memory → Sign → Wipe│     │
+│  │ (per request)   │    │ (Private key never persisted)   │     │
+│  └─────────────────┘    └─────────────────────────────────┘     │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+</details>
+
+---
+
+## 🔗 Related Packages
+
+| Package | Description | Blockchain |
+|---------|-------------|------------|
+| [@quantish/sdk](https://www.npmjs.com/package/@quantish/sdk) | Polymarket trading | Polygon |
+| **@quantish/kalshi-sdk** | Kalshi trading | Solana |
+
+---
+
+## 📄 License
+
+PolyForm Noncommercial License 1.0.0 © [Quantish](https://quantish.live)
+
+Free for personal and noncommercial use. For commercial licensing, contact hello@quantish.live.
+
+---
+
+## 🤝 Support
+
+- 📧 Email: hello@quantish.live
+- 🐛 Issues: [GitHub Issues](https://github.com/quantish/kalshi-sdk/issues)
+- 💬 Discord: Coming soon
+
+---
+
+<div align="center">
+  <sub>Built with ❤️ by <a href="https://quantish.live">Quantish</a></sub>
+</div>

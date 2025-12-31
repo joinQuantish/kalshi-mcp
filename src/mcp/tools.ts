@@ -10,6 +10,7 @@ import { getAccessCodeService } from '../services/accesscode.service.js';
 import { getSolanaWalletService } from '../wallet/solana-wallet.service.js';
 import { getDFlowMarketService } from '../services/dflow-market.service.js';
 import { getDFlowTradeService } from '../services/dflow-trade.service.js';
+import { getJupiterSwapService } from '../services/jupiter-swap.service.js';
 import { 
   encryptWalletForImport, 
   verifyWalletImportBundle,
@@ -17,6 +18,7 @@ import {
   WalletImportBundle,
 } from '../crypto/wallet-import.js';
 import { getEncryptionService } from '../crypto/encryption.js';
+import { config } from '../config/index.js';
 
 export interface ToolContext {
   userId?: string;
@@ -165,14 +167,14 @@ export const kalshiTools = [
   },
   {
     name: 'kalshi_get_events',
-    description: 'Get list of Kalshi events with optional filters and pagination. Events contain markets which have their own statuses.',
+    description: 'Get list of Kalshi events with optional filters and pagination. Defaults to active (tradeable) markets only.',
     inputSchema: {
       type: 'object',
       properties: {
         marketStatus: { 
           type: 'string', 
           enum: ['active', 'inactive', 'finalized', 'all'], 
-          description: 'Filter events by their market status: active (tradeable), inactive (not yet open), finalized (settled), or all (default)' 
+          description: 'Filter by market status: active (tradeable, default), inactive (not yet open), finalized (settled), or all' 
         },
         category: { type: 'string', description: 'Filter by category' },
         limit: { type: 'number', description: 'Max results per page (default 10, max 50)' },
@@ -442,6 +444,215 @@ export const kalshiTools = [
       required: ['externalId', 'privateKey'],
     },
   },
+
+  // ============================================
+  // TOKEN SWAPS (via Jupiter)
+  // ============================================
+  {
+    name: 'kalshi_get_swap_quote',
+    description: 'Get a quote for swapping tokens via Jupiter Aggregator. Use this for SOL ↔ USDC swaps and other token swaps (not prediction market trading).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        inputMint: { 
+          type: 'string', 
+          description: 'Input token mint address. Use "SOL" for native SOL, "USDC" for USDC.' 
+        },
+        outputMint: { 
+          type: 'string', 
+          description: 'Output token mint address. Use "SOL" for native SOL, "USDC" for USDC.' 
+        },
+        amount: { 
+          type: 'number', 
+          description: 'Amount to swap in human-readable units (e.g., 1.5 for 1.5 SOL or 100 for $100 USDC)' 
+        },
+        slippageBps: { 
+          type: 'number', 
+          description: 'Slippage tolerance in basis points (default 50 = 0.5%)' 
+        },
+      },
+      required: ['inputMint', 'outputMint', 'amount'],
+    },
+  },
+  {
+    name: 'kalshi_execute_swap',
+    description: 'Execute a token swap via Jupiter Aggregator. Use this to swap SOL to USDC, USDC to SOL, or other token pairs.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        inputMint: { 
+          type: 'string', 
+          description: 'Input token: "SOL", "USDC", or mint address' 
+        },
+        outputMint: { 
+          type: 'string', 
+          description: 'Output token: "SOL", "USDC", or mint address' 
+        },
+        amount: { 
+          type: 'number', 
+          description: 'Amount to swap in human-readable units' 
+        },
+        slippageBps: { 
+          type: 'number', 
+          description: 'Slippage tolerance in basis points (default 50 = 0.5%)' 
+        },
+        password: { 
+          type: 'string', 
+          description: 'Password (required for imported wallets only)' 
+        },
+      },
+      required: ['inputMint', 'outputMint', 'amount'],
+    },
+  },
+  {
+    name: 'kalshi_swap_sol_to_usdc',
+    description: 'Swap SOL to USDC. Convenience method for the most common swap.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        solAmount: { 
+          type: 'number', 
+          description: 'Amount of SOL to swap (e.g., 0.5 for 0.5 SOL)' 
+        },
+        slippageBps: { 
+          type: 'number', 
+          description: 'Slippage tolerance in basis points (default 50 = 0.5%)' 
+        },
+        password: { 
+          type: 'string', 
+          description: 'Password (required for imported wallets only)' 
+        },
+      },
+      required: ['solAmount'],
+    },
+  },
+  {
+    name: 'kalshi_swap_usdc_to_sol',
+    description: 'Swap USDC to SOL. Convenience method for getting SOL for transaction fees.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        usdcAmount: { 
+          type: 'number', 
+          description: 'Amount of USDC to swap (e.g., 10 for $10)' 
+        },
+        slippageBps: { 
+          type: 'number', 
+          description: 'Slippage tolerance in basis points (default 50 = 0.5%)' 
+        },
+        password: { 
+          type: 'string', 
+          description: 'Password (required for imported wallets only)' 
+        },
+      },
+      required: ['usdcAmount'],
+    },
+  },
+
+  // ============================================
+  // SEND TOKENS (Withdrawals)
+  // ============================================
+  {
+    name: 'kalshi_send_sol',
+    description: 'Send SOL to another Solana wallet. Use this to withdraw SOL to an external wallet.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        toAddress: { 
+          type: 'string', 
+          description: 'Destination Solana wallet address (base58)' 
+        },
+        amount: { 
+          type: 'number', 
+          description: 'Amount of SOL to send (e.g., 0.1 for 0.1 SOL)' 
+        },
+        password: { 
+          type: 'string', 
+          description: 'Password (required for imported wallets only)' 
+        },
+      },
+      required: ['toAddress', 'amount'],
+    },
+  },
+  {
+    name: 'kalshi_send_usdc',
+    description: 'Send USDC to another Solana wallet. Use this to withdraw USDC to an external wallet.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        toAddress: { 
+          type: 'string', 
+          description: 'Destination Solana wallet address (base58)' 
+        },
+        amount: { 
+          type: 'number', 
+          description: 'Amount of USDC to send (e.g., 50 for $50)' 
+        },
+        password: { 
+          type: 'string', 
+          description: 'Password (required for imported wallets only)' 
+        },
+      },
+      required: ['toAddress', 'amount'],
+    },
+  },
+  {
+    name: 'kalshi_send_token',
+    description: 'Send any SPL token to another Solana wallet. Use for tokens other than SOL/USDC.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        toAddress: { 
+          type: 'string', 
+          description: 'Destination Solana wallet address (base58)' 
+        },
+        mintAddress: { 
+          type: 'string', 
+          description: 'SPL token mint address' 
+        },
+        amount: { 
+          type: 'number', 
+          description: 'Amount to send in token units' 
+        },
+        decimals: { 
+          type: 'number', 
+          description: 'Token decimals (e.g., 6 for USDC, 9 for SOL)' 
+        },
+        password: { 
+          type: 'string', 
+          description: 'Password (required for imported wallets only)' 
+        },
+      },
+      required: ['toAddress', 'mintAddress', 'amount', 'decimals'],
+    },
+  },
+
+  // ============================================
+  // REDEMPTION (Additional helpers)
+  // ============================================
+  {
+    name: 'kalshi_get_redeemable_positions',
+    description: 'Get all your positions that can be redeemed (from settled/finalized markets). Returns winning positions ready to claim.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: 'kalshi_redeem_all_positions',
+    description: 'Redeem all winning positions at once. Swaps all redeemable outcome tokens back to USDC.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        password: { 
+          type: 'string', 
+          description: 'Password (required for imported wallets only)' 
+        },
+      },
+      required: [],
+    },
+  },
 ];
 
 /**
@@ -645,7 +856,7 @@ function encryptWallet(privateKeyBase58, password) {
     const limit = Math.min(args.limit || 10, 50);
     
     const result = await marketService.getEvents({
-      marketStatus: args.marketStatus || 'all',
+      marketStatus: args.marketStatus || 'active', // Default to active markets only
       category: args.category,
       limit,
       cursor: args.cursor,
@@ -695,7 +906,7 @@ function encryptWallet(privateKeyBase58, password) {
 
   if (name === 'kalshi_get_market_by_mint') {
     const marketService = getDFlowMarketService();
-    const market = await marketService.getMarketByOutcomeMint(args.mintAddress);
+    const market = await marketService.getMarketByMint(args.mintAddress);
     
     if (!market) {
       return { 
@@ -1203,6 +1414,317 @@ function encryptWallet(privateKeyBase58, password) {
       apiSecret: keyResult.apiSecret,
       publicKey,
       message: 'Private key imported successfully. Save your API key - it cannot be recovered!',
+    };
+  }
+
+  // ============================================
+  // JUPITER SWAP TOOLS
+  // ============================================
+
+  // Helper to resolve token symbol to mint address
+  const resolveMint = (input: string): string => {
+    const upper = input.toUpperCase();
+    if (upper === 'SOL') return config.tokens.SOL;
+    if (upper === 'USDC') return config.tokens.USDC;
+    if (upper === 'USDT') return config.tokens.USDT;
+    return input; // Assume it's already a mint address
+  };
+
+  // Helper to get decimals for a token
+  const getDecimals = (mint: string): number => {
+    if (mint === config.tokens.SOL) return 9;
+    if (mint === config.tokens.USDC) return 6;
+    if (mint === config.tokens.USDT) return 6;
+    return 6; // Default assumption
+  };
+
+  if (name === 'kalshi_get_swap_quote') {
+    const jupiterService = getJupiterSwapService();
+    
+    const inputMint = resolveMint(args.inputMint);
+    const outputMint = resolveMint(args.outputMint);
+    const decimals = getDecimals(inputMint);
+    const rawAmount = Math.floor(args.amount * Math.pow(10, decimals));
+
+    const quote = await jupiterService.getQuote({
+      inputMint,
+      outputMint,
+      amount: rawAmount,
+      slippageBps: args.slippageBps,
+    });
+
+    const outputDecimals = getDecimals(outputMint);
+
+    return {
+      quote: {
+        inputMint: quote.inputMint,
+        outputMint: quote.outputMint,
+        inputAmount: args.amount,
+        outputAmount: Number(quote.outAmount) / Math.pow(10, outputDecimals),
+        priceImpact: quote.priceImpactPct,
+        slippageBps: quote.slippageBps,
+        routes: quote.routePlan?.map(r => r.swapInfo.label).join(' → '),
+      },
+      note: 'Use kalshi_execute_swap to execute this swap.',
+    };
+  }
+
+  if (name === 'kalshi_execute_swap') {
+    const jupiterService = getJupiterSwapService();
+    
+    const inputMint = resolveMint(args.inputMint);
+    const outputMint = resolveMint(args.outputMint);
+    const decimals = getDecimals(inputMint);
+    const rawAmount = Math.floor(args.amount * Math.pow(10, decimals));
+
+    const result = await jupiterService.executeSwap(
+      userId,
+      {
+        inputMint,
+        outputMint,
+        amount: rawAmount,
+        slippageBps: args.slippageBps,
+      },
+      args.password
+    );
+
+    const outputDecimals = getDecimals(outputMint);
+
+    return {
+      success: true,
+      txSignature: result.txSignature,
+      inputAmount: args.amount,
+      outputAmount: Number(result.outputAmount) / Math.pow(10, outputDecimals),
+      priceImpact: result.priceImpact,
+      explorerUrl: result.explorerUrl,
+    };
+  }
+
+  if (name === 'kalshi_swap_sol_to_usdc') {
+    const jupiterService = getJupiterSwapService();
+    
+    const result = await jupiterService.swapSolToUsdc(
+      userId,
+      args.solAmount,
+      args.slippageBps,
+      args.password
+    );
+
+    return {
+      success: true,
+      txSignature: result.txSignature,
+      solSpent: args.solAmount,
+      usdcReceived: Number(result.outputAmount) / 1e6,
+      priceImpact: result.priceImpact,
+      explorerUrl: result.explorerUrl,
+    };
+  }
+
+  if (name === 'kalshi_swap_usdc_to_sol') {
+    const jupiterService = getJupiterSwapService();
+    
+    const result = await jupiterService.swapUsdcToSol(
+      userId,
+      args.usdcAmount,
+      args.slippageBps,
+      args.password
+    );
+
+    return {
+      success: true,
+      txSignature: result.txSignature,
+      usdcSpent: args.usdcAmount,
+      solReceived: Number(result.outputAmount) / 1e9,
+      priceImpact: result.priceImpact,
+      explorerUrl: result.explorerUrl,
+    };
+  }
+
+  // ============================================
+  // SEND TOOLS
+  // ============================================
+
+  if (name === 'kalshi_send_sol') {
+    const walletService = getSolanaWalletService();
+    
+    const result = await walletService.sendSol(
+      userId,
+      args.toAddress,
+      args.amount,
+      args.password
+    );
+
+    return {
+      success: true,
+      ...result,
+      message: `Successfully sent ${args.amount} SOL to ${args.toAddress}`,
+    };
+  }
+
+  if (name === 'kalshi_send_usdc') {
+    const walletService = getSolanaWalletService();
+    
+    const result = await walletService.sendUsdc(
+      userId,
+      args.toAddress,
+      args.amount,
+      args.password
+    );
+
+    return {
+      success: true,
+      ...result,
+      message: `Successfully sent $${args.amount} USDC to ${args.toAddress}`,
+    };
+  }
+
+  if (name === 'kalshi_send_token') {
+    const walletService = getSolanaWalletService();
+    
+    const result = await walletService.sendToken(
+      userId,
+      args.toAddress,
+      args.mintAddress,
+      args.amount,
+      args.decimals,
+      args.password
+    );
+
+    return {
+      success: true,
+      ...result,
+      message: `Successfully sent ${args.amount} tokens to ${args.toAddress}`,
+    };
+  }
+
+  // ============================================
+  // REDEMPTION HELPERS
+  // ============================================
+
+  if (name === 'kalshi_get_redeemable_positions') {
+    const walletService = getSolanaWalletService();
+    const marketService = getDFlowMarketService();
+    
+    const walletInfo = await walletService.getWalletInfo(userId);
+    if (!walletInfo) {
+      return { positions: [], message: 'No wallet found' };
+    }
+
+    // Get all token holdings
+    const tokens = await walletService.getAllTokenAccounts(walletInfo.publicKey);
+    
+    // Filter for non-zero balances that aren't SOL/USDC
+    const potentialPositions = tokens.filter(t => 
+      Number(t.balance) > 0 &&
+      t.mint !== config.tokens.USDC &&
+      t.mint !== config.tokens.SOL &&
+      t.mint !== config.tokens.USDT
+    );
+
+    // Check each position for redeemability
+    const redeemablePositions = [];
+    
+    for (const position of potentialPositions) {
+      try {
+        const market = await marketService.getMarketByMint(position.mint);
+        if (market) {
+          const redemptionStatus = await marketService.checkRedemptionStatus(market.ticker);
+          if (redemptionStatus.canRedeem) {
+            redeemablePositions.push({
+              mint: position.mint,
+              balance: Number(position.balance) / Math.pow(10, position.decimals),
+              market: market.ticker,
+              marketTitle: market.title,
+              outcome: redemptionStatus.winningOutcome,
+              settlementValue: redemptionStatus.settlementValue,
+            });
+          }
+        }
+      } catch {
+        // Skip tokens that aren't prediction market tokens
+      }
+    }
+
+    return {
+      redeemablePositions,
+      count: redeemablePositions.length,
+      note: redeemablePositions.length > 0 
+        ? 'Use kalshi_redeem_winnings or kalshi_redeem_all_positions to claim these.'
+        : 'No redeemable positions found.',
+    };
+  }
+
+  if (name === 'kalshi_redeem_all_positions') {
+    const walletService = getSolanaWalletService();
+    const marketService = getDFlowMarketService();
+    const tradeService = getDFlowTradeService();
+    
+    const walletInfo = await walletService.getWalletInfo(userId);
+    if (!walletInfo) {
+      throw new Error('No wallet found');
+    }
+
+    if (walletInfo.type === 'imported' && !args.password) {
+      throw new Error('Password required for imported wallet transactions');
+    }
+
+    // Get all token holdings
+    const tokens = await walletService.getAllTokenAccounts(walletInfo.publicKey);
+    
+    // Filter for non-zero balances that aren't SOL/USDC
+    const potentialPositions = tokens.filter(t => 
+      Number(t.balance) > 0 &&
+      t.mint !== config.tokens.USDC &&
+      t.mint !== config.tokens.SOL &&
+      t.mint !== config.tokens.USDT
+    );
+
+    const results = [];
+    
+    for (const position of potentialPositions) {
+      try {
+        const market = await marketService.getMarketByMint(position.mint);
+        if (market) {
+          const redemptionStatus = await marketService.checkRedemptionStatus(market.ticker);
+          if (redemptionStatus.canRedeem) {
+            // Redeem this position
+            const result = await tradeService.redeemWinnings(
+              userId,
+              position.mint,
+              Number(position.balance),
+              args.password
+            );
+            
+            results.push({
+              market: market.ticker,
+              mint: position.mint,
+              amount: Number(position.balance) / Math.pow(10, position.decimals),
+              txSignature: result.txSignature,
+              success: true,
+            });
+          }
+        }
+      } catch (e: any) {
+        results.push({
+          mint: position.mint,
+          success: false,
+          error: e.message,
+        });
+      }
+    }
+
+    const successCount = results.filter(r => r.success).length;
+    
+    return {
+      results,
+      summary: {
+        total: results.length,
+        successful: successCount,
+        failed: results.length - successCount,
+      },
+      message: successCount > 0 
+        ? `Successfully redeemed ${successCount} positions.`
+        : 'No positions were redeemed.',
     };
   }
 

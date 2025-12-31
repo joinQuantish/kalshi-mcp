@@ -11,11 +11,15 @@ import {
   VersionedTransaction,
   sendAndConfirmTransaction,
   LAMPORTS_PER_SOL,
+  SystemProgram,
 } from '@solana/web3.js';
 import { 
   getAssociatedTokenAddress, 
   getAccount, 
   TOKEN_PROGRAM_ID,
+  createTransferInstruction,
+  createAssociatedTokenAccountInstruction,
+  getOrCreateAssociatedTokenAccount,
 } from '@solana/spl-token';
 import bs58 from 'bs58';
 import { config } from '../config/index.js';
@@ -341,6 +345,198 @@ export class SolanaWalletService {
    */
   getConnection(): Connection {
     return this.connection;
+  }
+
+  /**
+   * Send SOL to another wallet
+   */
+  async sendSol(
+    userId: string,
+    toAddress: string,
+    solAmount: number,
+    password?: string
+  ): Promise<{
+    txSignature: string;
+    fromAddress: string;
+    toAddress: string;
+    amount: number;
+    explorerUrl: string;
+  }> {
+    const walletInfo = await this.getWalletInfo(userId);
+    
+    if (!walletInfo) {
+      throw new Error('No wallet found for user');
+    }
+
+    if (walletInfo.type === 'imported' && !password) {
+      throw new Error('Password required for imported wallet transactions');
+    }
+
+    // Validate destination address
+    let toPubkey: PublicKey;
+    try {
+      toPubkey = new PublicKey(toAddress);
+    } catch {
+      throw new Error('Invalid Solana address');
+    }
+
+    const fromPubkey = new PublicKey(walletInfo.publicKey);
+    const lamports = Math.floor(solAmount * LAMPORTS_PER_SOL);
+
+    // Check balance
+    const balance = await this.connection.getBalance(fromPubkey);
+    if (balance < lamports + 5000) { // 5000 lamports for tx fee
+      throw new Error(`Insufficient SOL balance. Have: ${balance / LAMPORTS_PER_SOL}, need: ${solAmount} + fee`);
+    }
+
+    // Create transfer instruction
+    const transaction = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey,
+        toPubkey,
+        lamports,
+      })
+    );
+
+    // Get recent blockhash
+    const { blockhash } = await this.connection.getLatestBlockhash();
+    transaction.recentBlockhash = blockhash;
+    transaction.feePayer = fromPubkey;
+
+    // Sign and send
+    const txSignature = await this.signAndSendTransaction(userId, transaction, password);
+
+    return {
+      txSignature,
+      fromAddress: walletInfo.publicKey,
+      toAddress,
+      amount: solAmount,
+      explorerUrl: `https://solscan.io/tx/${txSignature}`,
+    };
+  }
+
+  /**
+   * Send SPL token to another wallet
+   */
+  async sendToken(
+    userId: string,
+    toAddress: string,
+    mintAddress: string,
+    amount: number,
+    decimals: number,
+    password?: string
+  ): Promise<{
+    txSignature: string;
+    fromAddress: string;
+    toAddress: string;
+    mint: string;
+    amount: number;
+    explorerUrl: string;
+  }> {
+    const walletInfo = await this.getWalletInfo(userId);
+    
+    if (!walletInfo) {
+      throw new Error('No wallet found for user');
+    }
+
+    if (walletInfo.type === 'imported' && !password) {
+      throw new Error('Password required for imported wallet transactions');
+    }
+
+    // Validate addresses
+    let toPubkey: PublicKey;
+    let mintPubkey: PublicKey;
+    try {
+      toPubkey = new PublicKey(toAddress);
+      mintPubkey = new PublicKey(mintAddress);
+    } catch {
+      throw new Error('Invalid Solana address');
+    }
+
+    const fromPubkey = new PublicKey(walletInfo.publicKey);
+    const rawAmount = Math.floor(amount * Math.pow(10, decimals));
+
+    // Get source token account
+    const sourceAta = await getAssociatedTokenAddress(mintPubkey, fromPubkey);
+    
+    // Check source balance
+    try {
+      const sourceAccount = await getAccount(this.connection, sourceAta);
+      if (Number(sourceAccount.amount) < rawAmount) {
+        throw new Error(`Insufficient token balance. Have: ${Number(sourceAccount.amount) / Math.pow(10, decimals)}, need: ${amount}`);
+      }
+    } catch (e: any) {
+      if (e.message?.includes('Insufficient')) {
+        throw e;
+      }
+      throw new Error('Source token account not found');
+    }
+
+    // Get or create destination token account
+    const destAta = await getAssociatedTokenAddress(mintPubkey, toPubkey);
+    
+    const transaction = new Transaction();
+
+    // Check if destination ATA exists, if not create it
+    try {
+      await getAccount(this.connection, destAta);
+    } catch {
+      // Need to create the ATA
+      transaction.add(
+        createAssociatedTokenAccountInstruction(
+          fromPubkey,
+          destAta,
+          toPubkey,
+          mintPubkey
+        )
+      );
+    }
+
+    // Add transfer instruction
+    transaction.add(
+      createTransferInstruction(
+        sourceAta,
+        destAta,
+        fromPubkey,
+        rawAmount
+      )
+    );
+
+    // Get recent blockhash
+    const { blockhash } = await this.connection.getLatestBlockhash();
+    transaction.recentBlockhash = blockhash;
+    transaction.feePayer = fromPubkey;
+
+    // Sign and send
+    const txSignature = await this.signAndSendTransaction(userId, transaction, password);
+
+    return {
+      txSignature,
+      fromAddress: walletInfo.publicKey,
+      toAddress,
+      mint: mintAddress,
+      amount,
+      explorerUrl: `https://solscan.io/tx/${txSignature}`,
+    };
+  }
+
+  /**
+   * Helper: Send USDC
+   */
+  async sendUsdc(
+    userId: string,
+    toAddress: string,
+    usdcAmount: number,
+    password?: string
+  ) {
+    return this.sendToken(
+      userId,
+      toAddress,
+      config.tokens.USDC,
+      usdcAmount,
+      6, // USDC decimals
+      password
+    );
   }
 }
 
