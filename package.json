@@ -1,15 +1,13 @@
 {
-  "name": "@quantish/kalshi-sdk",
-  "version": "1.0.4",
-  "description": "Kalshi prediction market trading SDK with Solana integration via DFlow API - Build AI-powered trading agents for Kalshi markets",
+  "name": "@quantish/kalshi-server",
+  "version": "0.2.0",
+  "description": "Self-hosted Kalshi MCP server for trading via DFlow on Solana",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
-  "bin": {
-    "quantish-kalshi": "./dist/cli.js"
-  },
   "files": [
     "dist",
+    "prisma",
     "README.md",
     "LICENSE"
   ],
@@ -22,23 +20,21 @@
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsup src/index.ts src/cli.ts --format cjs,esm --dts --clean",
-    "build:cli": "tsup src/cli.ts --format cjs --outDir dist",
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
     "start": "node dist/index.js",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
-    "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/quantish/kalshi-sdk"
+    "url": "git+https://github.com/joinQuantish/kalshi-mcp.git"
   },
   "homepage": "https://quantish.live",
   "bugs": {
-    "url": "https://github.com/quantish/kalshi-sdk/issues"
+    "url": "https://github.com/joinQuantish/kalshi-mcp/issues"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.30.1",
@@ -47,7 +43,6 @@
     "@solana/web3.js": "^1.95.4",
     "axios": "^1.7.7",
     "bs58": "^6.0.0",
-    "commander": "^12.1.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.22.1",
@@ -78,15 +73,15 @@
     "trading",
     "mcp",
     "ai-agent",
-    "claude",
-    "cursor",
     "quantish",
-    "trading-bot",
-    "defi"
+    "self-hosting"
   ],
-  "author": "Quantish <hello@quantish.live>",
+  "author": "Quantish Inc. <hello@quantish.live>",
   "license": "PolyForm-Noncommercial-1.0.0",
   "publishConfig": {
     "access": "public"
   }
 }
+
+
+
