@@ -16,12 +16,6 @@ This package provides an MCP (Model Context Protocol) server that enables AI age
 
 ## Quick Start
 
-### Option 1: Deploy to Railway (Recommended)
-
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/kalshi-mcp)
-
-### Option 2: Self-Host
-
 ```bash
 npm install @quantish/kalshi-server
 ```
