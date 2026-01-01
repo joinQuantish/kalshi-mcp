@@ -17,7 +17,9 @@ This package provides an MCP (Model Context Protocol) server that enables AI age
 ## Quick Start
 
 ```bash
-npm install @quantish/kalshi-server
+git clone https://github.com/joinQuantish/kalshi-mcp
+cd kalshi-mcp
+npm install
 ```
 
 ## Environment Variables
