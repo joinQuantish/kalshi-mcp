@@ -170,7 +170,7 @@ export class DFlowMarketService {
   async searchEvents(query: string, limit: number = 20, marketStatus?: 'active' | 'inactive' | 'finalized' | 'all'): Promise<DFlowEvent[]> {
     try {
       // First try the official search endpoint
-      const response = await this.client.get('/api/v1/search/events', {
+      const response = await this.client.get('/api/v1/search', {
         params: { q: query, limit, withNestedMarkets: true },
       });
       let events = response.data.events || [];
