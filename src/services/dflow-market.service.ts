@@ -97,12 +97,13 @@ export class DFlowMarketService {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
-    
+
     // Add DFlow API key if configured
     if (config.dflow.apiKey) {
       headers['x-api-key'] = config.dflow.apiKey;
     }
-    
+
+    // DFlow Developer API client (has all markets including weather)
     this.client = axios.create({
       baseURL: config.dflow.metadataApiUrl,
       timeout: 30000,
@@ -116,9 +117,12 @@ export class DFlowMarketService {
 
   /**
    * Get a single event by ticker
+   * Uses singular /api/v1/event/{ticker} endpoint
    */
   async getEvent(ticker: string): Promise<DFlowEvent> {
-    const response = await this.client.get(`/api/v1/events/${ticker}`);
+    const response = await this.client.get(`/api/v1/event/${ticker}`, {
+      params: { withNestedMarkets: true },
+    });
     return response.data;
   }
 
