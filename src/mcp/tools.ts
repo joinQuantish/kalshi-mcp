@@ -888,20 +888,13 @@ function encryptWallet(privateKeyBase58, password) {
 
   if (name === 'kalshi_get_event') {
     const marketService = getDFlowMarketService();
-
     try {
       const event = await marketService.getEvent(args.ticker);
-
-      return {
-        event,
-        marketsCount: event.markets?.length || 0,
-        note: 'Use market tickers from the markets array for trading (e.g., for kalshi_buy_yes)',
-      };
+      return { event };
     } catch (error: any) {
       return {
         error: `Event not found: ${args.ticker}`,
-        suggestion: 'Check the ticker format. Weather events use format like KXHIGHLAX-26JAN08',
-        details: error.message,
+        suggestion: 'Use kalshi_search_markets or kalshi_get_events to find valid event tickers',
       };
     }
   }
@@ -909,14 +902,14 @@ function encryptWallet(privateKeyBase58, password) {
   if (name === 'kalshi_get_live_data') {
     const marketService = getDFlowMarketService();
     const liveData = await marketService.getLiveData(args.marketTicker);
-
+    
     if (!liveData) {
-      return {
+      return { 
         error: `Market not found: ${args.marketTicker}`,
         suggestion: 'Use kalshi_search_markets or kalshi_get_events to find valid market tickers',
       };
     }
-
+    
     return { liveData };
   }
 
@@ -1660,14 +1653,14 @@ function encryptWallet(privateKeyBase58, password) {
         const market = await marketService.getMarketByMint(position.mint);
         if (market) {
           const redemptionStatus = await marketService.checkRedemptionStatus(market.ticker);
-          if (redemptionStatus.isRedeemable) {
+          if (redemptionStatus.canRedeem) {
             redeemablePositions.push({
               mint: position.mint,
               balance: Number(position.balance) / Math.pow(10, position.decimals),
               market: market.ticker,
               marketTitle: market.title,
-              outcome: redemptionStatus.result,
-              winningMint: redemptionStatus.winningMint,
+              outcome: redemptionStatus.winningOutcome,
+              settlementValue: redemptionStatus.settlementValue,
             });
           }
         }
@@ -1717,7 +1710,7 @@ function encryptWallet(privateKeyBase58, password) {
         const market = await marketService.getMarketByMint(position.mint);
         if (market) {
           const redemptionStatus = await marketService.checkRedemptionStatus(market.ticker);
-          if (redemptionStatus.isRedeemable) {
+          if (redemptionStatus.canRedeem) {
             // Redeem this position
             const result = await tradeService.redeemWinnings(
               userId,

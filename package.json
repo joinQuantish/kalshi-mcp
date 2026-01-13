@@ -1,6 +1,6 @@
 {
   "name": "@quantish/kalshi-server",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Self-hosted Kalshi MCP server for trading via DFlow on Solana",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
