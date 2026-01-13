@@ -25,7 +25,7 @@ export const config = {
     // DFlow API endpoints for Kalshi trading on Solana
     // Note: The "dev" API is the main developer API with all markets
     // The non-dev URL is empty/deprecated
-    apiUrl: process.env.DFLOW_API_URL || 'https://quote-api.dflow.net',
+    apiUrl: process.env.DFLOW_API_URL || 'https://dev-quote-api.dflow.net',
     metadataApiUrl: process.env.DFLOW_METADATA_API_URL || 'https://dev-prediction-markets-api.dflow.net',
     apiKey: process.env.DFLOW_API_KEY || '',
   },
