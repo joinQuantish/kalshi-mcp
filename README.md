@@ -11,6 +11,7 @@ This package provides an MCP (Model Context Protocol) server that enables AI age
 - **Full Kalshi Trading** - Buy/sell on any Kalshi market
 - **Solana Wallet Management** - Generate and manage Solana wallets
 - **DFlow Integration** - Trade via DFlow's Solana infrastructure
+- **Jupiter Swaps** - Swap SOL/USDC via Jupiter Aggregator
 - **MCP Compatible** - Works with Claude, Quantish Agent, and any MCP client
 - **Self-Hostable** - Run on Railway, Fly.io, or any Node.js host
 
@@ -28,21 +29,21 @@ npm install
 |----------|----------|-------------|
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `ENCRYPTION_KEY` | Yes | 64-character hex string for wallet encryption |
-| `JWT_SECRET` | Yes | Secret for API key generation |
-| `DFLOW_API_KEY` | Yes | DFlow API key (see below) |
+| `DFLOW_API_KEY` | No | DFlow API key (optional, for authenticated endpoints) |
+| `JUPITER_API_KEY` | No | Jupiter API key from [portal.jup.ag](https://portal.jup.ag) for swap tools |
 | `SOLANA_RPC_URL` | No | Solana RPC endpoint (defaults to mainnet) |
-| `PORT` | No | Server port (defaults to 3000) |
+| `ADMIN_API_KEY` | No | Admin API key for administrative endpoints |
+| `PORT` | No | Server port (defaults to 3002) |
 
-### Obtaining a DFlow API Key
+### Obtaining API Keys
 
-> **Important:** DFlow access is **not permissionless**. To self-host this server, you must obtain an API key directly from the DFlow team.
+**DFlow API Key:**
+> DFlow access may require approval. Contact the DFlow team at [dflow.net](https://dflow.net) for API access.
 
-1. Visit [dflow.net](https://dflow.net) and contact their team
-2. Request API access for your organization/project
-3. Once approved, you'll receive a `DFLOW_API_KEY`
-4. Add this key to your environment variables
+**Jupiter API Key:**
+> Get a free API key from [portal.jup.ag](https://portal.jup.ag) (Basic tier, 1 RPS). Required for swap functionality.
 
-**Using Quantish's public servers?** You don't need your own DFlow key - we handle this for you. Just use the default MCP endpoints provided by the Quantish Agent.
+**Using Quantish's public servers?** You don't need your own keys - we handle this for you. Just use the default MCP endpoints provided by the Quantish Agent.
 
 ### Generate Encryption Key
 
@@ -75,24 +76,55 @@ npm run db:push
 
 ### Account Management
 - `kalshi_signup` - Create account with Solana wallet
-- `kalshi_get_wallet_info` - Get wallet address and balances
+- `kalshi_request_api_key` - Request API key with access code
+- `kalshi_get_wallet_info` - Get wallet address and type
+- `kalshi_get_wallet_status` - Full wallet status including balances
+- `kalshi_get_balances` - Get SOL and USDC balances
+- `kalshi_get_deposit_address` - Get address for deposits
 - `kalshi_export_private_key` - Export wallet private key
+- `kalshi_import_private_key` - Import existing Solana wallet
 
 ### Market Discovery
-- `kalshi_search_markets` - Search Kalshi markets
+- `kalshi_search_markets` - Search Kalshi markets by keyword
 - `kalshi_get_market` - Get market details by ticker
-- `kalshi_get_events` - Browse market categories
-- `kalshi_get_live_data` - Get live market data
+- `kalshi_get_event` - Get event with all nested markets
+- `kalshi_get_events` - Browse events with filters
+- `kalshi_get_live_data` - Get live pricing data
 
 ### Trading
-- `kalshi_get_quote` - Get quote for trade
-- `kalshi_place_order` - Execute trade on Solana
+- `kalshi_get_quote` - Get quote for prediction market trade
+- `kalshi_buy_yes` - Buy YES outcome tokens
+- `kalshi_buy_no` - Buy NO outcome tokens
+- `kalshi_sell_position` - Sell outcome tokens back to USDC
 - `kalshi_get_positions` - View current positions
+- `kalshi_get_orders` - View order history
+
+### Swaps (SOL/USDC)
+- `kalshi_get_swap_quote` - Get Jupiter swap quote
+- `kalshi_execute_swap` - Execute token swap
+- `kalshi_swap_sol_to_usdc` - Swap SOL to USDC
+- `kalshi_swap_usdc_to_sol` - Swap USDC to SOL
+
+### Transfers
+- `kalshi_send_sol` - Send SOL to another wallet
+- `kalshi_send_usdc` - Send USDC to another wallet
+- `kalshi_send_token` - Send any SPL token
 
 ### Market Operations
-- `kalshi_check_market_initialization` - Check if market is tokenized
-- `kalshi_initialize_market` - Initialize market on-chain
-- `kalshi_check_redemption_status` - Check if market can be redeemed
+- `kalshi_check_market_initialization` - Check if market is tokenized on-chain
+- `kalshi_initialize_market` - Initialize market on-chain (pays SOL fee)
+- `kalshi_check_redemption_status` - Check if market is settled
+- `kalshi_get_market_by_mint` - Look up market by token mint
+
+### Redemption
+- `kalshi_get_redeemable_positions` - Find positions ready to claim
+- `kalshi_redeem_winnings` - Redeem specific winning position
+- `kalshi_redeem_all_positions` - Redeem all winning positions at once
+
+### API Key Management
+- `kalshi_list_api_keys` - List your API keys
+- `kalshi_create_additional_api_key` - Create new API key
+- `kalshi_revoke_api_key` - Revoke an API key
 
 ## API Format
 
@@ -153,7 +185,8 @@ npm run dev
 - **NPM**: [@quantish/kalshi-server](https://www.npmjs.com/package/@quantish/kalshi-server)
 - **GitHub**: [joinQuantish/kalshi-mcp](https://github.com/joinQuantish/kalshi-mcp)
 - **Quantish Agent**: [@quantish/agent](https://www.npmjs.com/package/@quantish/agent)
-- **DFlow Docs**: [docs.dflow.net](https://docs.dflow.net)
+- **DFlow Docs**: [pond.dflow.net](https://pond.dflow.net)
+- **Jupiter Portal**: [portal.jup.ag](https://portal.jup.ag)
 
 ## License
 
@@ -164,6 +197,3 @@ This project is licensed under the [PolyForm Noncommercial License 1.0.0](https:
 ---
 
 Built by [Quantish Inc.](https://quantish.live)
-
-
-
