@@ -3,23 +3,24 @@
  * Handles wallet generation, storage, and transaction signing
  */
 
-import { 
-  Keypair, 
-  PublicKey, 
-  Connection, 
+import {
+  Keypair,
+  PublicKey,
+  Connection,
   Transaction,
   VersionedTransaction,
   sendAndConfirmTransaction,
   LAMPORTS_PER_SOL,
   SystemProgram,
 } from '@solana/web3.js';
-import { 
-  getAssociatedTokenAddress, 
-  getAccount, 
+import {
+  getAssociatedTokenAddress,
+  getAccount,
   TOKEN_PROGRAM_ID,
+  TOKEN_2022_PROGRAM_ID,
   createTransferInstruction,
   createAssociatedTokenAccountInstruction,
-  getOrCreateAssociatedTokenAccount,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
 import bs58 from 'bs58';
 import { config } from '../config/index.js';
@@ -301,41 +302,75 @@ export class SolanaWalletService {
   }
 
   /**
-   * Get SPL token balance for a specific mint
+   * Get SPL token balance for a specific mint (tries both Token and Token-2022 programs)
    */
   async getTokenBalance(publicKey: string, mintAddress: string): Promise<number> {
+    const pubkey = new PublicKey(publicKey);
+    const mint = new PublicKey(mintAddress);
+
+    // Try standard Token Program first
     try {
-      const pubkey = new PublicKey(publicKey);
-      const mint = new PublicKey(mintAddress);
-      const ata = await getAssociatedTokenAddress(mint, pubkey);
-      const account = await getAccount(this.connection, ata);
+      const ata = await getAssociatedTokenAddress(mint, pubkey, false, TOKEN_PROGRAM_ID);
+      const account = await getAccount(this.connection, ata, undefined, TOKEN_PROGRAM_ID);
       return Number(account.amount);
     } catch {
-      return 0;
+      // Not found in standard Token Program
     }
+
+    // Try Token-2022 Program (used by Kalshi/DFlow prediction market tokens)
+    try {
+      const ata = await getAssociatedTokenAddress(mint, pubkey, false, TOKEN_2022_PROGRAM_ID);
+      const account = await getAccount(this.connection, ata, undefined, TOKEN_2022_PROGRAM_ID);
+      return Number(account.amount);
+    } catch {
+      // Not found in Token-2022 either
+    }
+
+    return 0;
   }
 
   /**
-   * Get all SPL token accounts for a wallet
+   * Get all SPL token accounts for a wallet (queries both Token and Token-2022 programs)
    */
   async getAllTokenAccounts(publicKey: string): Promise<Array<{
     mint: string;
     balance: string;
     decimals: number;
+    programId: string;
   }>> {
     const pubkey = new PublicKey(publicKey);
-    
-    const tokenAccounts = await this.connection.getParsedTokenAccountsByOwner(
+
+    // Query standard Token Program
+    const standardTokens = await this.connection.getParsedTokenAccountsByOwner(
       pubkey,
       { programId: TOKEN_PROGRAM_ID }
     );
 
-    return tokenAccounts.value.map((account) => {
+    // Query Token-2022 Program (used by Kalshi/DFlow prediction market tokens)
+    const token2022Tokens = await this.connection.getParsedTokenAccountsByOwner(
+      pubkey,
+      { programId: TOKEN_2022_PROGRAM_ID }
+    );
+
+    // Combine results
+    const allTokens = [
+      ...standardTokens.value.map((account) => ({
+        ...account,
+        tokenProgram: TOKEN_PROGRAM_ID.toBase58(),
+      })),
+      ...token2022Tokens.value.map((account) => ({
+        ...account,
+        tokenProgram: TOKEN_2022_PROGRAM_ID.toBase58(),
+      })),
+    ];
+
+    return allTokens.map((account) => {
       const parsed = account.account.data.parsed.info;
       return {
         mint: parsed.mint,
         balance: parsed.tokenAmount.amount,
         decimals: parsed.tokenAmount.decimals,
+        programId: account.tokenProgram,
       };
     });
   }
@@ -363,7 +398,7 @@ export class SolanaWalletService {
     explorerUrl: string;
   }> {
     const walletInfo = await this.getWalletInfo(userId);
-    
+
     if (!walletInfo) {
       throw new Error('No wallet found for user');
     }
@@ -385,7 +420,7 @@ export class SolanaWalletService {
 
     // Check balance
     const balance = await this.connection.getBalance(fromPubkey);
-    if (balance < lamports + 5000) { // 5000 lamports for tx fee
+    if (balance < lamports + 5000) {
       throw new Error(`Insufficient SOL balance. Have: ${balance / LAMPORTS_PER_SOL}, need: ${solAmount} + fee`);
     }
 
@@ -416,7 +451,46 @@ export class SolanaWalletService {
   }
 
   /**
-   * Send SPL token to another wallet
+   * Detect which token program a mint uses (Token or Token-2022)
+   * Kalshi/DFlow prediction market tokens use Token-2022
+   */
+  private async detectTokenProgram(
+    mintPubkey: PublicKey,
+    ownerPubkey: PublicKey
+  ): Promise<PublicKey> {
+    // Try standard Token Program first
+    try {
+      const ata = await getAssociatedTokenAddress(mintPubkey, ownerPubkey, false, TOKEN_PROGRAM_ID);
+      await getAccount(this.connection, ata, undefined, TOKEN_PROGRAM_ID);
+      return TOKEN_PROGRAM_ID;
+    } catch {
+      // Not found in standard Token Program
+    }
+
+    // Try Token-2022 Program (used by Kalshi/DFlow prediction market tokens)
+    try {
+      const ata = await getAssociatedTokenAddress(mintPubkey, ownerPubkey, false, TOKEN_2022_PROGRAM_ID);
+      await getAccount(this.connection, ata, undefined, TOKEN_2022_PROGRAM_ID);
+      return TOKEN_2022_PROGRAM_ID;
+    } catch {
+      // Not found in Token-2022 either
+    }
+
+    // Check the mint account itself to determine the program
+    try {
+      const mintInfo = await this.connection.getAccountInfo(mintPubkey);
+      if (mintInfo?.owner.equals(TOKEN_2022_PROGRAM_ID)) {
+        return TOKEN_2022_PROGRAM_ID;
+      }
+    } catch {
+      // Fall through to default
+    }
+
+    return TOKEN_PROGRAM_ID;
+  }
+
+  /**
+   * Send SPL token to another wallet (supports both Token and Token-2022 programs)
    */
   async sendToken(
     userId: string,
@@ -434,7 +508,7 @@ export class SolanaWalletService {
     explorerUrl: string;
   }> {
     const walletInfo = await this.getWalletInfo(userId);
-    
+
     if (!walletInfo) {
       throw new Error('No wallet found for user');
     }
@@ -456,12 +530,22 @@ export class SolanaWalletService {
     const fromPubkey = new PublicKey(walletInfo.publicKey);
     const rawAmount = Math.floor(amount * Math.pow(10, decimals));
 
-    // Get source token account
-    const sourceAta = await getAssociatedTokenAddress(mintPubkey, fromPubkey);
-    
+    // Detect which token program this mint uses
+    const tokenProgramId = await this.detectTokenProgram(mintPubkey, fromPubkey);
+    const isToken2022 = tokenProgramId.equals(TOKEN_2022_PROGRAM_ID);
+
+    // Get source token account with correct program
+    const sourceAta = await getAssociatedTokenAddress(
+      mintPubkey,
+      fromPubkey,
+      false,
+      tokenProgramId,
+      ASSOCIATED_TOKEN_PROGRAM_ID
+    );
+
     // Check source balance
     try {
-      const sourceAccount = await getAccount(this.connection, sourceAta);
+      const sourceAccount = await getAccount(this.connection, sourceAta, undefined, tokenProgramId);
       if (Number(sourceAccount.amount) < rawAmount) {
         throw new Error(`Insufficient token balance. Have: ${Number(sourceAccount.amount) / Math.pow(10, decimals)}, need: ${amount}`);
       }
@@ -469,36 +553,46 @@ export class SolanaWalletService {
       if (e.message?.includes('Insufficient')) {
         throw e;
       }
-      throw new Error('Source token account not found');
+      throw new Error(`Source token account not found. Token uses ${isToken2022 ? 'Token-2022' : 'Token'} program.`);
     }
 
-    // Get or create destination token account
-    const destAta = await getAssociatedTokenAddress(mintPubkey, toPubkey);
-    
+    // Get destination token account with correct program
+    const destAta = await getAssociatedTokenAddress(
+      mintPubkey,
+      toPubkey,
+      false,
+      tokenProgramId,
+      ASSOCIATED_TOKEN_PROGRAM_ID
+    );
+
     const transaction = new Transaction();
 
     // Check if destination ATA exists, if not create it
     try {
-      await getAccount(this.connection, destAta);
+      await getAccount(this.connection, destAta, undefined, tokenProgramId);
     } catch {
-      // Need to create the ATA
+      // Need to create the ATA with the correct token program
       transaction.add(
         createAssociatedTokenAccountInstruction(
           fromPubkey,
           destAta,
           toPubkey,
-          mintPubkey
+          mintPubkey,
+          tokenProgramId,
+          ASSOCIATED_TOKEN_PROGRAM_ID
         )
       );
     }
 
-    // Add transfer instruction
+    // Add transfer instruction with correct token program
     transaction.add(
       createTransferInstruction(
         sourceAta,
         destAta,
         fromPubkey,
-        rawAmount
+        rawAmount,
+        [],
+        tokenProgramId
       )
     );
 

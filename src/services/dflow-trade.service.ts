@@ -77,19 +77,12 @@ export class DFlowTradeService {
   private minRequestInterval: number = 500; // 500ms between requests to avoid 429
 
   constructor() {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    
-    // Add DFlow API key if configured
-    if (config.dflow.apiKey) {
-      headers['x-api-key'] = config.dflow.apiKey;
-    }
-    
     this.client = axios.create({
       baseURL: config.dflow.apiUrl,
       timeout: 30000,
-      headers,
+      headers: {
+        'Content-Type': 'application/json',
+      },
     });
     
     // Add retry interceptor for rate limiting
@@ -336,71 +329,6 @@ export class DFlowTradeService {
   }> {
     const response = await this.client.post('/swap/instructions', params);
     return response.data;
-  }
-
-  /**
-   * Initialize a prediction market (tokenization)
-   * This creates the YES/NO outcome tokens on-chain for an uninitialized market.
-   * Requires a small SOL fee paid by the payer.
-   * 
-   * Reference: https://pond.dflow.net/swap-api-reference/prediction-market/prediction-market-init
-   */
-  async initializeMarket(
-    userId: string,
-    outcomeMint: string,
-    password?: string
-  ): Promise<{
-    txSignature: string;
-    success: boolean;
-  }> {
-    const walletService = getSolanaWalletService();
-    const walletInfo = await walletService.getWalletInfo(userId);
-
-    if (!walletInfo) {
-      throw new Error('No wallet found for user');
-    }
-
-    if (walletInfo.type === 'imported' && !password) {
-      throw new Error('Password required for imported wallet transactions');
-    }
-
-    await this.throttle();
-
-    // Get the initialization transaction
-    const response = await this.client.get('/prediction-market-init', {
-      params: {
-        payer: walletInfo.publicKey,
-        outcomeMint: outcomeMint,
-      },
-    });
-
-    const { transaction, computeUnitLimit, lastValidBlockHeight } = response.data;
-
-    if (!transaction) {
-      throw new Error('No transaction returned - market may already be initialized');
-    }
-
-    // Decode and sign the transaction
-    const txBuffer = Buffer.from(transaction, 'base64');
-    
-    let tx: Transaction | VersionedTransaction;
-    try {
-      tx = VersionedTransaction.deserialize(txBuffer);
-    } catch {
-      tx = Transaction.from(txBuffer);
-    }
-
-    // Sign and send
-    const txSignature = await walletService.signAndSendTransaction(
-      userId,
-      tx,
-      password
-    );
-
-    return {
-      txSignature,
-      success: true,
-    };
   }
 
   /**

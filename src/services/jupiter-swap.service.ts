@@ -74,11 +74,20 @@ export class JupiterSwapService {
   private connection: Connection;
 
   constructor() {
+    // OFFICIAL Jupiter API endpoint - requires API key from portal.jup.ag
+    // Free tier (Basic) available with 1 RPS
+    const jupiterApiKey = process.env.JUPITER_API_KEY;
+
+    if (!jupiterApiKey) {
+      console.warn('[Jupiter] No JUPITER_API_KEY set - swap functionality will be disabled');
+    }
+
     this.client = axios.create({
-      baseURL: 'https://quote-api.jup.ag/v6',
+      baseURL: 'https://api.jup.ag/swap/v1',
       timeout: 30000,
       headers: {
         'Content-Type': 'application/json',
+        ...(jupiterApiKey ? { 'x-api-key': jupiterApiKey } : {}),
       },
     });
 
@@ -271,6 +280,7 @@ export function getJupiterSwapService(): JupiterSwapService {
   }
   return jupiterServiceInstance;
 }
+
 
 
 
