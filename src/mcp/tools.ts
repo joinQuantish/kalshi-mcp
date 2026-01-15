@@ -729,6 +729,251 @@ function encryptWallet(privateKeyBase58, password) {
     };
   }
 
+  // MARKET DISCOVERY (Unauthenticated - read-only DFlow data)
+  if (name === 'kalshi_search_markets') {
+    const marketService = getDFlowMarketService();
+    const limit = Math.min(args.limit || 10, 50);
+    const offset = args.offset || 0;
+
+    const allEvents = await marketService.searchEvents(
+      args.query,
+      offset + limit + 1,
+      args.marketStatus || 'all'
+    );
+
+    const paginatedEvents = allEvents.slice(offset, offset + limit);
+    const hasMore = allEvents.length > offset + limit;
+
+    return {
+      events: paginatedEvents,
+      pagination: {
+        offset,
+        limit,
+        returned: paginatedEvents.length,
+        hasMore,
+        nextOffset: hasMore ? offset + limit : null,
+      },
+      note: 'Markets have statuses: active (tradeable), inactive (not yet open), finalized (settled). Only "active" markets can be traded.',
+    };
+  }
+
+  if (name === 'kalshi_get_market') {
+    const marketService = getDFlowMarketService();
+    const market = await marketService.getMarket(args.ticker);
+
+    if (!market) {
+      return {
+        error: `Market not found: ${args.ticker}`,
+        suggestion: 'Use kalshi_search_markets or kalshi_get_events to find valid market tickers',
+      };
+    }
+
+    return { market };
+  }
+
+  if (name === 'kalshi_get_events') {
+    const marketService = getDFlowMarketService();
+    const limit = Math.min(args.limit || 10, 50);
+
+    const result = await marketService.getEvents({
+      marketStatus: args.marketStatus || 'active',
+      category: args.category,
+      limit,
+      cursor: args.cursor,
+      withNestedMarkets: true,
+    });
+
+    return {
+      events: result.events,
+      pagination: {
+        limit,
+        returned: result.events.length,
+        cursor: result.cursor || null,
+        hasMore: !!result.cursor,
+      },
+      note: 'Markets have statuses: active (tradeable), inactive (not yet open), finalized (settled).',
+    };
+  }
+
+  if (name === 'kalshi_get_event') {
+    const marketService = getDFlowMarketService();
+    try {
+      const event = await marketService.getEvent(args.ticker);
+      return { event };
+    } catch (error: any) {
+      return {
+        error: `Event not found: ${args.ticker}`,
+        suggestion: 'Use kalshi_search_markets or kalshi_get_events to find valid event tickers',
+      };
+    }
+  }
+
+  if (name === 'kalshi_get_live_data') {
+    const marketService = getDFlowMarketService();
+    const liveData = await marketService.getLiveData(args.marketTicker);
+
+    if (!liveData) {
+      return {
+        error: `Market not found: ${args.marketTicker}`,
+        suggestion: 'Use kalshi_search_markets or kalshi_get_events to find valid market tickers',
+      };
+    }
+
+    return { liveData };
+  }
+
+  if (name === 'kalshi_check_market_initialization') {
+    const marketService = getDFlowMarketService();
+    const market = await marketService.getMarket(args.ticker);
+
+    if (!market) {
+      return {
+        error: `Market not found: ${args.ticker}`,
+        suggestion: 'Use kalshi_search_markets to find valid market tickers',
+      };
+    }
+
+    const settlementMint = args.settlementMint || config.tokens.USDC;
+    const accounts = market.accounts?.[settlementMint];
+
+    if (!accounts) {
+      return {
+        ticker: args.ticker,
+        isInitialized: false,
+        message: 'Market does not have accounts for this settlement mint',
+        availableSettlementMints: Object.keys(market.accounts || {}),
+      };
+    }
+
+    return {
+      ticker: args.ticker,
+      isInitialized: accounts.isInitialized,
+      yesMint: accounts.yesMint,
+      noMint: accounts.noMint,
+      marketLedger: accounts.marketLedger,
+      message: accounts.isInitialized
+        ? 'Market is initialized and ready for trading'
+        : 'Market needs initialization before first trade.',
+    };
+  }
+
+  if (name === 'kalshi_check_redemption_status') {
+    const marketService = getDFlowMarketService();
+    const market = await marketService.getMarket(args.ticker);
+
+    if (!market) {
+      return {
+        error: `Market not found: ${args.ticker}`,
+        suggestion: 'Use kalshi_search_markets to find valid market tickers',
+      };
+    }
+
+    const settlementMint = args.settlementMint || config.tokens.USDC;
+    const accounts = market.accounts?.[settlementMint];
+
+    return {
+      ticker: args.ticker,
+      status: market.status,
+      result: market.result,
+      isSettled: market.status === 'finalized',
+      winningSide: market.result || null,
+      redemptionStatus: accounts?.redemptionStatus || null,
+      canRedeem: market.status === 'finalized' && market.result !== null,
+      yesMint: accounts?.yesMint,
+      noMint: accounts?.noMint,
+      message: market.status === 'finalized'
+        ? market.result
+          ? `Market settled. ${market.result.toUpperCase()} won. Use kalshi_redeem_winnings to claim.`
+          : 'Market settled but no winner determined.'
+        : 'Market not yet settled.',
+    };
+  }
+
+  if (name === 'kalshi_get_market_by_mint') {
+    const marketService = getDFlowMarketService();
+    try {
+      const market = await marketService.getMarketByMint(args.mintAddress);
+      return { market };
+    } catch (error: any) {
+      return {
+        error: `No market found for mint: ${args.mintAddress}`,
+        message: 'This mint address is not associated with a known Kalshi market.',
+      };
+    }
+  }
+
+  // IMPORT PRIVATE KEY (Unauthenticated - creates new user)
+  if (name === 'kalshi_import_private_key') {
+    const { externalId, privateKey, keyName } = args;
+
+    if (!externalId) {
+      throw new Error('externalId is required');
+    }
+
+    if (!privateKey) {
+      throw new Error('privateKey is required');
+    }
+
+    // Validate private key format (base58)
+    let keypair;
+    try {
+      const bs58 = require('bs58');
+      const privateKeyBytes = bs58.decode(privateKey);
+      const { Keypair } = require('@solana/web3.js');
+      keypair = Keypair.fromSecretKey(privateKeyBytes);
+    } catch (e) {
+      throw new Error('Invalid private key format. Must be Base58-encoded Solana private key.');
+    }
+
+    const publicKey = keypair.publicKey.toBase58();
+
+    // Check if user already exists
+    let existingUser = await prisma.user.findUnique({
+      where: { externalId },
+    });
+
+    if (existingUser) {
+      throw new Error('User with this externalId already exists. Use a different externalId.');
+    }
+
+    // Create user with wallet
+    const encryption = getEncryptionService();
+    const encryptedPrivateKey = encryption.encrypt(privateKey);
+
+    const newUser = await prisma.user.create({
+      data: {
+        externalId,
+        solanaPublicKey: publicKey,
+        encryptedPrivateKey,
+      },
+    });
+
+    // Create API key
+    const apiKeyService = getApiKeyService();
+    const keyResult = await apiKeyService.createApiKey(newUser.id, keyName || 'Imported Wallet');
+
+    // Log the import
+    await prisma.activityLog.create({
+      data: {
+        userId: newUser.id,
+        action: 'PRIVATE_KEY_IMPORT',
+        resource: 'wallet',
+        details: {
+          timestamp: new Date().toISOString(),
+          keyName: keyName || 'Imported Wallet',
+        },
+      },
+    });
+
+    return {
+      success: true,
+      apiKey: keyResult.apiKey,
+      apiSecret: keyResult.apiSecret,
+      publicKey,
+      message: 'Private key imported successfully. Save your API key - it cannot be recovered!',
+    };
+  }
+
   // ============================================
   // AUTHENTICATED TOOLS
   // ============================================
@@ -829,135 +1074,6 @@ function encryptWallet(privateKeyBase58, password) {
     };
   }
 
-  // MARKET DISCOVERY
-  if (name === 'kalshi_search_markets') {
-    const marketService = getDFlowMarketService();
-    const limit = Math.min(args.limit || 10, 50); // Default 10, max 50
-    const offset = args.offset || 0;
-    
-    const allEvents = await marketService.searchEvents(
-      args.query, 
-      offset + limit + 1, // Fetch one extra to check if there's more
-      args.marketStatus || 'all'
-    );
-    
-    // Apply offset and limit
-    const paginatedEvents = allEvents.slice(offset, offset + limit);
-    const hasMore = allEvents.length > offset + limit;
-    
-    return { 
-      events: paginatedEvents,
-      pagination: {
-        offset,
-        limit,
-        returned: paginatedEvents.length,
-        hasMore,
-        nextOffset: hasMore ? offset + limit : null,
-      },
-      note: 'Markets have statuses: active (tradeable), inactive (not yet open), finalized (settled). Only "active" markets can be traded. Use offset for pagination.',
-    };
-  }
-
-  if (name === 'kalshi_get_market') {
-    const marketService = getDFlowMarketService();
-    const market = await marketService.getMarket(args.ticker);
-    
-    if (!market) {
-      return { 
-        error: `Market not found: ${args.ticker}`,
-        suggestion: 'Use kalshi_search_markets or kalshi_get_events to find valid market tickers',
-      };
-    }
-    
-    return { market };
-  }
-
-  if (name === 'kalshi_get_events') {
-    const marketService = getDFlowMarketService();
-    const limit = Math.min(args.limit || 10, 50); // Default 10, max 50
-
-    const result = await marketService.getEvents({
-      marketStatus: args.marketStatus || 'active',
-      category: args.category,
-      limit,
-      cursor: args.cursor,
-      withNestedMarkets: true,
-    });
-
-    return {
-      events: result.events,
-      pagination: {
-        limit,
-        returned: result.events.length,
-        cursor: result.cursor || null,
-        hasMore: !!result.cursor,
-      },
-      note: 'Markets have statuses: active (tradeable), inactive (not yet open), finalized (settled). Use cursor for pagination.',
-    };
-  }
-
-  if (name === 'kalshi_get_event') {
-    const marketService = getDFlowMarketService();
-    try {
-      const event = await marketService.getEvent(args.ticker);
-      return { event };
-    } catch (error: any) {
-      return {
-        error: `Event not found: ${args.ticker}`,
-        suggestion: 'Use kalshi_search_markets or kalshi_get_events to find valid event tickers',
-      };
-    }
-  }
-
-  if (name === 'kalshi_get_live_data') {
-    const marketService = getDFlowMarketService();
-    const liveData = await marketService.getLiveData(args.marketTicker);
-
-    if (!liveData) {
-      return {
-        error: `Market not found: ${args.marketTicker}`,
-        suggestion: 'Use kalshi_search_markets or kalshi_get_events to find valid market tickers',
-      };
-    }
-
-    return { liveData };
-  }
-
-  if (name === 'kalshi_check_market_initialization') {
-    const marketService = getDFlowMarketService();
-    const market = await marketService.getMarket(args.ticker);
-
-    if (!market) {
-      return {
-        error: `Market not found: ${args.ticker}`,
-        suggestion: 'Use kalshi_search_markets to find valid market tickers',
-      };
-    }
-
-    const settlementMint = args.settlementMint || config.tokens.USDC;
-    const accounts = market.accounts?.[settlementMint];
-
-    if (!accounts) {
-      return {
-        ticker: args.ticker,
-        isInitialized: false,
-        message: 'Market does not have accounts for this settlement mint',
-        availableSettlementMints: Object.keys(market.accounts || {}),
-      };
-    }
-
-    return {
-      ticker: args.ticker,
-      isInitialized: accounts.isInitialized,
-      yesMint: accounts.yesMint,
-      noMint: accounts.noMint,
-      marketLedger: accounts.marketLedger,
-      message: accounts.isInitialized
-        ? 'Market is initialized and ready for trading'
-        : 'Market needs initialization before first trade. Use kalshi_initialize_market with the yesMint or noMint.',
-    };
-  }
-
   if (name === 'kalshi_initialize_market') {
     // Note: Market initialization is typically handled automatically by DFlow
     // This is a placeholder for manual initialization if needed
@@ -965,51 +1081,6 @@ function encryptWallet(privateKeyBase58, password) {
       message: 'Market initialization is handled automatically by DFlow on first trade.',
       note: 'If you encounter initialization errors, the market may not yet be available for trading.',
     };
-  }
-
-  if (name === 'kalshi_check_redemption_status') {
-    const marketService = getDFlowMarketService();
-    const market = await marketService.getMarket(args.ticker);
-
-    if (!market) {
-      return {
-        error: `Market not found: ${args.ticker}`,
-        suggestion: 'Use kalshi_search_markets to find valid market tickers',
-      };
-    }
-
-    const settlementMint = args.settlementMint || config.tokens.USDC;
-    const accounts = market.accounts?.[settlementMint];
-
-    return {
-      ticker: args.ticker,
-      status: market.status,
-      result: market.result,
-      isSettled: market.status === 'finalized',
-      winningSide: market.result || null,
-      redemptionStatus: accounts?.redemptionStatus || null,
-      canRedeem: market.status === 'finalized' && market.result !== null,
-      yesMint: accounts?.yesMint,
-      noMint: accounts?.noMint,
-      message: market.status === 'finalized'
-        ? market.result
-          ? `Market settled. ${market.result.toUpperCase()} won. Use kalshi_redeem_winnings to claim.`
-          : 'Market settled but no winner determined.'
-        : 'Market not yet settled.',
-    };
-  }
-
-  if (name === 'kalshi_get_market_by_mint') {
-    const marketService = getDFlowMarketService();
-    try {
-      const market = await marketService.getMarketByMint(args.mintAddress);
-      return { market };
-    } catch (error: any) {
-      return {
-        error: `No market found for mint: ${args.mintAddress}`,
-        message: 'This mint address is not associated with a known Kalshi market.',
-      };
-    }
   }
 
   // TRADING
@@ -1522,77 +1593,6 @@ function encryptWallet(privateKeyBase58, password) {
       privateKey: privateKeyBase58,
       publicKey: walletInfo.publicKey,
       warning: '⚠️ SECURITY WARNING: Anyone with this private key controls your wallet. Store it securely and never share it.',
-    };
-  }
-
-  if (name === 'kalshi_import_private_key') {
-    const { externalId, privateKey, keyName } = args;
-    
-    if (!externalId) {
-      throw new Error('externalId is required');
-    }
-    
-    if (!privateKey) {
-      throw new Error('privateKey is required');
-    }
-    
-    // Validate private key format (base58)
-    let keypair;
-    try {
-      const bs58 = require('bs58');
-      const privateKeyBytes = bs58.decode(privateKey);
-      const { Keypair } = require('@solana/web3.js');
-      keypair = Keypair.fromSecretKey(privateKeyBytes);
-    } catch (e) {
-      throw new Error('Invalid private key format. Must be Base58-encoded Solana private key.');
-    }
-    
-    const publicKey = keypair.publicKey.toBase58();
-    
-    // Check if user already exists
-    let existingUser = await prisma.user.findUnique({
-      where: { externalId },
-    });
-    
-    if (existingUser) {
-      throw new Error('User with this externalId already exists. Use a different externalId.');
-    }
-    
-    // Create user with wallet
-    const encryption = getEncryptionService();
-    const encryptedPrivateKey = encryption.encrypt(privateKey);
-    
-    const newUser = await prisma.user.create({
-      data: {
-        externalId,
-        solanaPublicKey: publicKey,
-        encryptedPrivateKey,
-      },
-    });
-    
-    // Create API key
-    const apiKeyService = getApiKeyService();
-    const keyResult = await apiKeyService.createApiKey(newUser.id, keyName || 'Imported Wallet');
-    
-    // Log the import
-    await prisma.activityLog.create({
-      data: {
-        userId: newUser.id,
-        action: 'PRIVATE_KEY_IMPORT',
-        resource: 'wallet',
-        details: {
-          timestamp: new Date().toISOString(),
-          keyName: keyName || 'Imported Wallet',
-        },
-      },
-    });
-    
-    return {
-      success: true,
-      apiKey: keyResult.apiKey,
-      apiSecret: keyResult.apiSecret,
-      publicKey,
-      message: 'Private key imported successfully. Save your API key - it cannot be recovered!',
     };
   }
 
