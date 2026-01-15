@@ -1,8 +1,9 @@
 /**
  * DFlow Prediction Market Metadata Service
  * Handles market discovery, event data, and pricing information
- * 
- * API Reference: https://pond.dflow.net/prediction-market-metadata-api-reference/introduction
+ *
+ * API Reference: https://dev-prediction-markets-api.dflow.net/docs
+ * OpenAPI Spec: https://dev-prediction-markets-api.dflow.net/openapi.json
  */
 
 import axios, { AxiosInstance } from 'axios';
@@ -19,7 +20,7 @@ export interface DFlowEvent {
   liquidity?: number;
   openInterest?: number;
   settlementSources?: Array<{ name: string; url: string }>;
-  markets: DFlowMarket[];
+  markets?: DFlowMarket[];
 }
 
 export interface DFlowMarket {
@@ -33,7 +34,7 @@ export interface DFlowMarket {
   openTime?: number;
   closeTime?: number;
   expirationTime?: number;
-  status: 'active' | 'inactive' | 'finalized';  // Actual DFlow statuses
+  status: 'active' | 'inactive' | 'finalized';
   volume?: number;
   result?: 'yes' | 'no' | null;
   openInterest?: number;
@@ -41,10 +42,10 @@ export interface DFlowMarket {
   earlyCloseCondition?: string;
   rulesPrimary?: string;
   rulesSecondary?: string;
-  yesBid?: number | null;
-  yesAsk?: number | null;
-  noBid?: number | null;
-  noAsk?: number | null;
+  yesBid?: number | string | null;
+  yesAsk?: number | string | null;
+  noBid?: number | string | null;
+  noAsk?: number | string | null;
   accounts?: {
     [settlementMint: string]: {
       marketLedger: string;
@@ -78,16 +79,36 @@ export interface LiveData {
   noPrice: number;
   volume24h: number;
   openInterest: number;
-  yesBid?: number | null;
-  yesAsk?: number | null;
-  noBid?: number | null;
-  noAsk?: number | null;
+  yesBid?: number | string | null;
+  yesAsk?: number | string | null;
+  noBid?: number | string | null;
+  noAsk?: number | string | null;
   status?: string;
   lastTrade?: {
     price: number;
     size: number;
     timestamp: string;
   };
+}
+
+export interface OrderbookData {
+  yes_bids: Record<string, number>;
+  yes_asks: Record<string, number>;
+  no_bids: Record<string, number>;
+  no_asks: Record<string, number>;
+}
+
+export interface Trade {
+  tradeId: string;
+  ticker: string;
+  price: number;
+  count: number;
+  yesPrice: number;
+  noPrice: number;
+  yesPriceDollars: string;
+  noPriceDollars: string;
+  takerSide: 'yes' | 'no';
+  createdTime: number;
 }
 
 export class DFlowMarketService {
@@ -109,106 +130,96 @@ export class DFlowMarketService {
 
   /**
    * Get a single event by ticker
+   * Correct path: /api/v1/event/{event_id}
    */
   async getEvent(ticker: string): Promise<DFlowEvent> {
-    const response = await this.client.get(`/api/v1/events/${ticker}`);
+    const response = await this.client.get(`/api/v1/event/${ticker}`);
     return response.data;
   }
 
   /**
    * Get multiple events with optional filters
-   * Note: Status filtering happens at market level, not event level
    */
   async getEvents(params?: {
     category?: string;
     limit?: number;
     cursor?: string;
     withNestedMarkets?: boolean;
-    marketStatus?: 'active' | 'inactive' | 'finalized' | 'all';  // Filter by market status
+    marketStatus?: 'active' | 'inactive' | 'finalized' | 'all';
   }): Promise<{ events: DFlowEvent[]; cursor?: string }> {
     const { marketStatus, limit, ...apiParams } = params || {};
     const requestedLimit = limit || 50;
-    
-    // When filtering by market status, fetch more to ensure we get enough results after filtering
+
     const fetchLimit = (marketStatus && marketStatus !== 'all') ? Math.max(200, requestedLimit * 4) : requestedLimit;
-    
-    // Always include nested markets for full data
+
     const queryParams = {
       ...apiParams,
       limit: fetchLimit,
       withNestedMarkets: params?.withNestedMarkets ?? true,
     };
-    
+
     const response = await this.client.get('/api/v1/events', { params: queryParams });
     let events = response.data.events || [];
-    
-    // Filter events by market status if specified
+
     if (marketStatus && marketStatus !== 'all') {
-      events = events.filter((event: DFlowEvent) => 
+      events = events.filter((event: DFlowEvent) =>
         event.markets?.some((market: DFlowMarket) => market.status === marketStatus)
       );
     }
-    
-    // Apply the requested limit after filtering
+
     events = events.slice(0, requestedLimit);
-    
+
     return { events, cursor: response.data.cursor };
   }
 
   /**
-   * Search events by title or ticker
-   * Fetches all events and filters client-side for best results
-   * Includes all market statuses (active, inactive, finalized) for discovery
+   * Search events by query
+   * Correct path: /api/v1/search
    */
   async searchEvents(query: string, limit: number = 20, marketStatus?: 'active' | 'inactive' | 'finalized' | 'all'): Promise<DFlowEvent[]> {
     try {
-      // First try the official search endpoint
-      const response = await this.client.get('/api/v1/search/events', {
+      const response = await this.client.get('/api/v1/search', {
         params: { q: query, limit, withNestedMarkets: true },
       });
       let events = response.data.events || [];
-      
-      // Filter by market status if specified
+
       if (marketStatus && marketStatus !== 'all') {
-        events = events.filter((e: DFlowEvent) => 
+        events = events.filter((e: DFlowEvent) =>
           e.markets?.some((m: DFlowMarket) => m.status === marketStatus)
         );
       }
-      
+
       return events;
     } catch (error: any) {
       // Fallback to fetching events and filtering client-side
       if (error.response?.status === 404 || error.response?.status === 400) {
-        // Fetch a larger batch of events for better search coverage
         const response = await this.client.get('/api/v1/events', {
           params: { withNestedMarkets: true, limit: 200 },
         });
         let events = response.data.events || [];
         const queryLower = query.toLowerCase();
-        
-        // Search in event title, ticker, subtitle, and market titles
+
         events = events.filter((e: DFlowEvent) => {
-          const eventMatch = 
+          const eventMatch =
             e.title?.toLowerCase().includes(queryLower) ||
             e.ticker?.toLowerCase().includes(queryLower) ||
             e.subtitle?.toLowerCase().includes(queryLower) ||
             e.seriesTicker?.toLowerCase().includes(queryLower);
-          
+
           const marketMatch = e.markets?.some((m: DFlowMarket) =>
             m.title?.toLowerCase().includes(queryLower) ||
             m.ticker?.toLowerCase().includes(queryLower)
           );
-          
+
           return eventMatch || marketMatch;
         });
-        
-        // Filter by market status if specified
+
         if (marketStatus && marketStatus !== 'all') {
-          events = events.filter((e: DFlowEvent) => 
+          events = events.filter((e: DFlowEvent) =>
             e.markets?.some((m: DFlowMarket) => m.status === marketStatus)
           );
         }
-        
+
         return events.slice(0, limit);
       }
       throw error;
@@ -216,22 +227,15 @@ export class DFlowMarketService {
   }
 
   /**
-   * Get event forecast percentile history
-   */
-  async getEventForecastHistory(ticker: string): Promise<any> {
-    const response = await this.client.get(`/api/v1/events/${ticker}/forecast-history`);
-    return response.data;
-  }
-
-  /**
    * Get event candlestick data
+   * Correct path: /api/v1/event/{ticker}/candlesticks
    */
   async getEventCandlesticks(ticker: string, params?: {
     resolution?: '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
     from?: string;
     to?: string;
   }): Promise<MarketCandlestick[]> {
-    const response = await this.client.get(`/api/v1/events/${ticker}/candlesticks`, { params });
+    const response = await this.client.get(`/api/v1/event/${ticker}/candlesticks`, { params });
     return response.data.candlesticks || [];
   }
 
@@ -241,45 +245,37 @@ export class DFlowMarketService {
 
   /**
    * Get a single market by ticker
-   * Note: DFlow API /api/v1/markets/{ticker} returns 404, so we use the list endpoint with filters
+   * Correct path: /api/v1/market/{market_id}
    */
   async getMarket(ticker: string): Promise<DFlowMarket | null> {
-    // Extract event ticker from market ticker (e.g., "KXFEDDECISION-25DEC-C25" -> "KXFEDDECISION-25DEC")
-    const parts = ticker.split('-');
-    const eventTicker = parts.length >= 3 ? parts.slice(0, -1).join('-') : ticker;
-    
-    // Get markets filtered by event ticker
-    const response = await this.client.get('/api/v1/markets', {
-      params: { eventTicker, limit: 100 },
-    });
-    
-    const markets = response.data.markets || [];
-    const market = markets.find((m: DFlowMarket) => m.ticker === ticker);
-    
-    if (!market) {
-      // Fallback: search through events
-      const eventsResponse = await this.client.get('/api/v1/events', {
-        params: { withNestedMarkets: true, limit: 100 },
-      });
-      
-      for (const event of eventsResponse.data.events || []) {
-        const found = event.markets?.find((m: DFlowMarket) => m.ticker === ticker);
-        if (found) {
-          return found;
+    try {
+      const response = await this.client.get(`/api/v1/market/${ticker}`);
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        // Fallback: search through events
+        const eventsResponse = await this.client.get('/api/v1/events', {
+          params: { withNestedMarkets: true, limit: 100 },
+        });
+
+        for (const event of eventsResponse.data.events || []) {
+          const found = event.markets?.find((m: DFlowMarket) => m.ticker === ticker);
+          if (found) {
+            return found;
+          }
         }
+        return null;
       }
-      
-      return null;
+      throw error;
     }
-    
-    return market;
   }
 
   /**
    * Get market by outcome mint address
+   * Correct path: /api/v1/market/by-mint/{mint_address}
    */
   async getMarketByMint(mintAddress: string): Promise<DFlowMarket> {
-    const response = await this.client.get(`/api/v1/markets/by-mint/${mintAddress}`);
+    const response = await this.client.get(`/api/v1/market/by-mint/${mintAddress}`);
     return response.data;
   }
 
@@ -288,7 +284,7 @@ export class DFlowMarketService {
    */
   async getMarkets(params?: {
     eventTicker?: string;
-    status?: 'active' | 'inactive' | 'finalized';  // Actual DFlow market statuses
+    status?: 'active' | 'inactive' | 'finalized';
     limit?: number;
     cursor?: string;
   }): Promise<{ markets: DFlowMarket[]; cursor?: string }> {
@@ -298,62 +294,91 @@ export class DFlowMarketService {
 
   /**
    * Get outcome mints for a market
+   * Correct path: /api/v1/outcome_mints
    */
   async getOutcomeMints(marketTicker: string): Promise<{
     yes: string;
     no: string;
     settlement: string;
   }> {
-    const response = await this.client.get(`/api/v1/markets/${marketTicker}/mints`);
+    const response = await this.client.get('/api/v1/outcome_mints', {
+      params: { marketTicker },
+    });
     return response.data;
   }
 
   /**
    * Filter outcome mints by criteria
+   * Correct path: /api/v1/filter_outcome_mints
    */
   async filterOutcomeMints(mints: string[]): Promise<Array<{
     mint: string;
     marketTicker: string;
     side: 'yes' | 'no';
   }>> {
-    const response = await this.client.post('/api/v1/markets/filter-mints', { mints });
+    const response = await this.client.post('/api/v1/filter_outcome_mints', { mints });
     return response.data.results || [];
   }
 
   /**
    * Get market candlestick data
+   * Correct path: /api/v1/market/{ticker}/candlesticks
    */
   async getMarketCandlesticks(ticker: string, params?: {
     resolution?: '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
     from?: string;
     to?: string;
   }): Promise<MarketCandlestick[]> {
-    const response = await this.client.get(`/api/v1/markets/${ticker}/candlesticks`, { params });
+    const response = await this.client.get(`/api/v1/market/${ticker}/candlesticks`, { params });
     return response.data.candlesticks || [];
   }
 
   // ============================================
+  // ORDERBOOK API
+  // ============================================
+
+  /**
+   * Get orderbook for a market
+   * Path: /api/v1/orderbook/{market_ticker}
+   */
+  async getOrderbook(marketTicker: string): Promise<OrderbookData> {
+    const response = await this.client.get(`/api/v1/orderbook/${marketTicker}`);
+    return response.data;
+  }
+
+  /**
+   * Get orderbook by mint address
+   * Path: /api/v1/orderbook/by-mint/{mint_address}
+   */
+  async getOrderbookByMint(mintAddress: string): Promise<OrderbookData> {
+    const response = await this.client.get(`/api/v1/orderbook/by-mint/${mintAddress}`);
+    return response.data;
+  }
+
+  // ============================================
   // LIVE DATA API
-  // Note: DFlow /api/v1/live/* endpoints return 404
-  // We construct live data from market data instead
+  // Constructs live data from market data
   // ============================================
 
   /**
    * Get live data for a market
-   * Since DFlow live endpoints return 404, we get data from market details
    */
   async getLiveData(marketTicker: string): Promise<LiveData | null> {
     const market = await this.getMarket(marketTicker);
-    
+
     if (!market) {
       return null;
     }
-    
-    // Construct live data from market info
+
+    const parsePrice = (val: number | string | null | undefined): number => {
+      if (val === null || val === undefined) return 0;
+      return typeof val === 'string' ? parseFloat(val) : val;
+    };
+
     return {
       ticker: market.ticker,
-      yesPrice: market.yesBid || market.yesAsk || 0,
-      noPrice: market.noBid || market.noAsk || 0,
+      yesPrice: parsePrice(market.yesBid) || parsePrice(market.yesAsk) || 0,
+      noPrice: parsePrice(market.noBid) || parsePrice(market.noAsk) || 0,
       volume24h: market.volume || 0,
       openInterest: market.openInterest || 0,
       yesBid: market.yesBid,
@@ -368,62 +393,59 @@ export class DFlowMarketService {
    * Get live data for an event (all markets)
    */
   async getLiveDataByEvent(eventTicker: string): Promise<LiveData[]> {
-    // Get markets for this event
-    const response = await this.client.get('/api/v1/markets', {
-      params: { eventTicker, limit: 100 },
-    });
-    
-    const markets = response.data.markets || [];
-    
-    return markets.map((market: DFlowMarket) => ({
-      ticker: market.ticker,
-      yesPrice: market.yesBid || market.yesAsk || 0,
-      noPrice: market.noBid || market.noAsk || 0,
-      volume24h: market.volume || 0,
-      openInterest: market.openInterest || 0,
-      yesBid: market.yesBid,
-      yesAsk: market.yesAsk,
-      noBid: market.noBid,
-      noAsk: market.noAsk,
-      status: market.status,
-    }));
+    try {
+      const event = await this.getEvent(eventTicker);
+      const markets = event.markets || [];
+
+      const parsePrice = (val: number | string | null | undefined): number => {
+        if (val === null || val === undefined) return 0;
+        return typeof val === 'string' ? parseFloat(val) : val;
+      };
+
+      return markets.map((market: DFlowMarket) => ({
+        ticker: market.ticker,
+        yesPrice: parsePrice(market.yesBid) || parsePrice(market.yesAsk) || 0,
+        noPrice: parsePrice(market.noBid) || parsePrice(market.noAsk) || 0,
+        volume24h: market.volume || 0,
+        openInterest: market.openInterest || 0,
+        yesBid: market.yesBid,
+        yesAsk: market.yesAsk,
+        noBid: market.noBid,
+        noAsk: market.noAsk,
+        status: market.status,
+      }));
+    } catch (error) {
+      return [];
+    }
   }
 
   /**
    * Get live data by mint address
-   * Since DFlow live endpoints return 404, we search through events
    */
   async getLiveDataByMint(mintAddress: string): Promise<LiveData | null> {
-    // Fetch events and search for the mint
-    const response = await this.client.get('/api/v1/events', {
-      params: { withNestedMarkets: true, limit: 100 },
-    });
-    
-    for (const event of response.data.events || []) {
-      for (const market of event.markets || []) {
-        // Check all settlement mints
-        if (market.accounts) {
-          for (const settlement of Object.values(market.accounts) as any[]) {
-            if (settlement.yesMint === mintAddress || settlement.noMint === mintAddress) {
-              return {
-                ticker: market.ticker,
-                yesPrice: market.yesBid || market.yesAsk || 0,
-                noPrice: market.noBid || market.noAsk || 0,
-                volume24h: market.volume || 0,
-                openInterest: market.openInterest || 0,
-                yesBid: market.yesBid,
-                yesAsk: market.yesAsk,
-                noBid: market.noBid,
-                noAsk: market.noAsk,
-                status: market.status,
-              };
-            }
-          }
-        }
-      }
+    try {
+      const market = await this.getMarketByMint(mintAddress);
+
+      const parsePrice = (val: number | string | null | undefined): number => {
+        if (val === null || val === undefined) return 0;
+        return typeof val === 'string' ? parseFloat(val) : val;
+      };
+
+      return {
+        ticker: market.ticker,
+        yesPrice: parsePrice(market.yesBid) || parsePrice(market.yesAsk) || 0,
+        noPrice: parsePrice(market.noBid) || parsePrice(market.noAsk) || 0,
+        volume24h: market.volume || 0,
+        openInterest: market.openInterest || 0,
+        yesBid: market.yesBid,
+        yesAsk: market.yesAsk,
+        noBid: market.noBid,
+        noAsk: market.noAsk,
+        status: market.status,
+      };
+    } catch (error) {
+      return null;
     }
-    
-    return null;
   }
 
   // ============================================
@@ -431,31 +453,28 @@ export class DFlowMarketService {
   // ============================================
 
   /**
-   * Get recent trades for a market
+   * Get recent trades
+   * Correct path: /api/v1/trades with query params
    */
-  async getTrades(marketTicker: string, params?: {
+  async getTrades(params?: {
+    marketTicker?: string;
     limit?: number;
     cursor?: string;
-  }): Promise<Array<{
-    id: string;
-    price: number;
-    size: number;
-    side: 'buy' | 'sell';
-    timestamp: string;
-  }>> {
-    const response = await this.client.get(`/api/v1/trades/${marketTicker}`, { params });
-    return response.data.trades || [];
+  }): Promise<{ trades: Trade[]; cursor?: string }> {
+    const response = await this.client.get('/api/v1/trades', { params });
+    return response.data;
   }
 
   /**
    * Get trades by mint
+   * Correct path: /api/v1/trades/by-mint/{mint_address}
    */
   async getTradesByMint(mintAddress: string, params?: {
     limit?: number;
     cursor?: string;
-  }): Promise<any[]> {
+  }): Promise<{ trades: Trade[]; cursor?: string }> {
     const response = await this.client.get(`/api/v1/trades/by-mint/${mintAddress}`, { params });
-    return response.data.trades || [];
+    return response.data;
   }
 
   // ============================================
@@ -472,6 +491,7 @@ export class DFlowMarketService {
 
   /**
    * Get series by ticker
+   * Correct path: /api/v1/series/{series_ticker}
    */
   async getSeriesByTicker(ticker: string): Promise<DFlowSeries> {
     const response = await this.client.get(`/api/v1/series/${ticker}`);
@@ -484,18 +504,20 @@ export class DFlowMarketService {
 
   /**
    * Get tags organized by categories
+   * Correct path: /api/v1/tags_by_categories
    */
   async getTagsByCategories(): Promise<Record<string, string[]>> {
-    const response = await this.client.get('/api/v1/tags/by-categories');
-    return response.data;
+    const response = await this.client.get('/api/v1/tags_by_categories');
+    return response.data.tagsByCategories || response.data;
   }
 
   /**
    * Get sports filters
+   * Correct path: /api/v1/filters_by_sports
    */
   async getSportsFilters(): Promise<any> {
-    const response = await this.client.get('/api/v1/sports/filters');
-    return response.data;
+    const response = await this.client.get('/api/v1/filters_by_sports');
+    return response.data.filtersBySports || response.data;
   }
 }
 
@@ -508,4 +530,3 @@ export function getDFlowMarketService(): DFlowMarketService {
   }
   return marketServiceInstance;
 }
-

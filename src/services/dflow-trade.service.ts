@@ -1,8 +1,9 @@
 /**
  * DFlow Trade API Service
  * Handles order creation, execution, and status tracking
- * 
- * API Reference: https://pond.dflow.net/swap-api-reference/order/order
+ *
+ * Base URL: https://dev-quote-api.dflow.net
+ * Main endpoint: GET /order - Get quote and transaction for swaps
  */
 
 import axios, { AxiosInstance } from 'axios';
