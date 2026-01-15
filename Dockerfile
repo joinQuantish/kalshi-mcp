@@ -16,6 +16,9 @@ RUN npm ci
 # Generate Prisma client
 RUN npx prisma generate
 
+# Cache busting - change this value to force rebuild
+ARG CACHE_BUST=v0.3.1-auth-fix
+
 # Copy source and build
 COPY . .
 RUN npm run build
