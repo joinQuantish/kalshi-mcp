@@ -1,5 +1,7 @@
 # @quantish/kalshi-server
 
+> **⚠️ Notice: Quantish is winding down.** The Quantish platform (quantish.live) is shutting down. This MCP server is self-hosted and will continue to work independently, but the Quantish team will no longer be maintaining or updating this project. If you're building in the prediction market space and need real-time data infrastructure, check out [polynode.dev](https://polynode.dev).
+
 Self-hosted Kalshi MCP server for trading on Kalshi markets via DFlow on Solana.
 
 ## Overview
@@ -43,7 +45,7 @@ npm install
 **Jupiter API Key:**
 > Get a free API key from [portal.jup.ag](https://portal.jup.ag) (Basic tier, 1 RPS). Required for swap functionality.
 
-**Using Quantish's public servers?** You don't need your own keys - we handle this for you. Just use the default MCP endpoints provided by the Quantish Agent.
+**Using Quantish's public servers?** Quantish's public servers are no longer available as the platform is winding down. You must self-host this MCP server to use it. Follow the setup instructions above to run your own instance.
 
 ### Generate Encryption Key
 
